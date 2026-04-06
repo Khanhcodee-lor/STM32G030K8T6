@@ -45,12 +45,18 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/app/app_main.c
+    Core/config/app_config.c
+    Core/protocols/rs485_ll.c
+    Core/utils/debug_log.c
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Inc
     Core/app
+    Core/config
+    Core/protocols
+    Core/utils
 )
 
 # Add project symbols (macros)

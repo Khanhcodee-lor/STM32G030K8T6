@@ -60,6 +60,8 @@ void Error_Handler(void);
 /* USER CODE BEGIN Private defines */
 #define LED_TEST_Pin GPIO_PIN_8
 #define LED_TEST_GPIO_Port GPIOA
+#define RS485_EN_Pin GPIO_PIN_6
+#define RS485_EN_GPIO_Port GPIOC
 
 /* USER CODE END Private defines */
 
