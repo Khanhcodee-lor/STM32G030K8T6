@@ -5,16 +5,19 @@
 static void Rs485Ll_SetTransmitMode(void);
 static void Rs485Ll_SetReceiveMode(void);
 
+//Thiết lập UART giao tiếp với RS485
 void Rs485Ll_Init(uint32_t baudrate)
 {
-  RCC->APBENR2 |= RCC_APBENR2_USART1EN;
-
+  RCC->APBENR2 |= RCC_APBENR2_USART1EN; // Bật clock
+  //reset cấu hình 
   USART1->CR1 = 0U;
   USART1->CR2 = 0U;
   USART1->CR3 = 0U;
+
   USART1->BRR = 16000000UL / baudrate;
-  USART1->ICR = USART_ICR_TCCF | USART_ICR_ORECF;
-  USART1->CR1 = USART_CR1_UE | USART_CR1_TE | USART_CR1_RE;
+
+  USART1->ICR = USART_ICR_TCCF | USART_ICR_ORECF; // Xóa cờ TC(Transmission Complete)/ORE (Overrun Error)
+  USART1->CR1 = USART_CR1_UE | USART_CR1_TE | USART_CR1_RE; // UE: bật USART, TE: bật truyền, RE: bật nhận
 
   Rs485Ll_SetReceiveMode();
 }
