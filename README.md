@@ -7,9 +7,11 @@ Project firmware cho board dùng `STM32G030K8T6`.
 - `main.c` chỉ làm nhiệm vụ bootstrap, sau đó chuyển quyền điều phối cho `app_init()` và `app_main()`.
 - Debug log đi qua `USART2` tại header `J3`.
 - I2C test hiện scan `I2C2` một lần lúc boot để tìm thiết bị ngoài.
+- AI hiện đọc `ADS1115` theo vòng 4 kênh và expose qua `Input Registers (FC04)`.
 - RS485 chạy trên `USART1`, điều khiển chân `EN-485` bằng `PC6`.
 - Modbus RTU hiện hỗ trợ:
   - `0x03 Read Holding Registers`
+  - `0x04 Read Input Registers`
   - `0x06 Write Single Register`
 
 ## Lưu ý so với tài liệu gốc
@@ -69,6 +71,7 @@ i2c2 ack @ 0x48
 i2c2 ack @ 0x60
 ads1115 ack @ 0x48
 mcp4728 ack @ 0x60
+ai ads1115 ready @ 0x48
 ```
 
 ### 2. Đọc địa chỉ Modbus
@@ -115,6 +118,24 @@ Lưu ý:
 
 - Bước này xác nhận bus và địa chỉ có phản hồi ACK.
 - Đây chưa phải bước định danh tuyệt đối IC bằng thanh ghi riêng của từng chip.
+
+### 5. Đọc AI qua Modbus
+
+AI hiện dùng `Function Code = 04` với các `Input Registers`:
+
+- `0x0000..0x0003`: `AI1_RAW..AI4_RAW`, dải `0..4095`
+- `0x0004..0x0007`: `AI1_SCALED..AI4_SCALED`, giá trị theo `mV`, dải `0..10000`
+
+Lưu ý:
+
+- Firmware đang theo ví dụ của tài liệu: `5000` nghĩa là `5.000V`.
+- Vì vậy `AIx_SCALED` hiện được lưu theo `mV`, dù cột scale trong bảng gốc có ghi chưa nhất quán.
+
+Ví dụ test nhanh bằng `Modbus Poll`:
+
+- Đọc `AI1_RAW`: `Slave ID = địa chỉ hiện tại`, `Function = 04`, `Address = 0`, `Quantity = 1`
+- Đọc `AI1..AI4_RAW`: `Function = 04`, `Address = 0`, `Quantity = 4`
+- Đọc `AI1..AI4_SCALED`: `Function = 04`, `Address = 4`, `Quantity = 4`
 
 ## Cấu trúc thư mục
 

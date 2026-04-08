@@ -17,8 +17,18 @@ Thư mục này chứa tầng điều phối chính của hệ thống.
 - Khởi tạo Modbus RTU.
 - In log boot và địa chỉ Modbus hiện tại.
 - Chạy scan `I2C2` một lần lúc boot để kiểm tra ACK của thiết bị ngoài.
+- Khởi tạo module AI dựa trên địa chỉ `ADS1115` đã scan được.
 - Chạy heartbeat LED.
+- Poll vòng đọc `ADS1115` để cập nhật 4 kênh AI.
 - Poll Modbus RTU liên tục.
+
+`analog_input.h`
+- Khai báo API AI mức ứng dụng.
+- Cho phép app init/process và cho Modbus đọc `Input Registers`.
+
+`analog_input.c`
+- Cài đặt đọc `ADS1115` theo vòng 4 kênh.
+- Chuyển kết quả ADC sang `raw 0..4095` và `scaled 0..10000 mV`.
 
 ## Ghi chú kỹ thuật
 

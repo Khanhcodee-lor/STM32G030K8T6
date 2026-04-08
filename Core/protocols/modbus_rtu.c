@@ -1,5 +1,6 @@
 #include "modbus_rtu.h"
 
+#include "analog_input.h"
 #include "app_config.h"
 #include "debug_log.h"
 #include "device_config.h"
@@ -9,11 +10,13 @@
 
 #define MODBUS_RTU_MAX_FRAME_SIZE 32U
 #define MODBUS_FUNC_READ_HOLDING_REGISTERS 0x03U
+#define MODBUS_FUNC_READ_INPUT_REGISTERS   0x04U
 #define MODBUS_FUNC_WRITE_SINGLE_REGISTER  0x06U
 #define MODBUS_EXCEPTION_ILLEGAL_FUNCTION  0x01U
 #define MODBUS_EXCEPTION_ILLEGAL_ADDRESS   0x02U
 #define MODBUS_EXCEPTION_ILLEGAL_VALUE     0x03U
 #define MODBUS_EXCEPTION_DEVICE_FAILURE    0x04U
+#define MODBUS_RTU_MAX_READ_REGISTERS      ((MODBUS_RTU_MAX_FRAME_SIZE - 5U) / 2U)
 
 static uint8_t s_rx_buffer[MODBUS_RTU_MAX_FRAME_SIZE];
 static uint8_t s_rx_length;
@@ -111,6 +114,7 @@ static void ModbusRtu_ProcessFrame(uint8_t slave_address)
   uint16_t computed_crc = 0U;
   uint8_t function = 0U;
   uint16_t register_address = 0U;
+  uint16_t register_count = 0U;
 
   if (s_rx_length < 4U)
   {
@@ -165,6 +169,47 @@ static void ModbusRtu_ProcessFrame(uint8_t slave_address)
         response[2] = 2U;
         ModbusRtu_WriteU16(&response[3], DeviceConfig_GetModbusAddress());
         ModbusRtu_SendResponse(response, 5U);
+      }
+      break;
+
+    case MODBUS_FUNC_READ_INPUT_REGISTERS:
+      if (s_rx_length != 8U)
+      {
+        ModbusRtu_SendException(slave_address, function, MODBUS_EXCEPTION_ILLEGAL_VALUE);
+        return;
+      }
+
+      register_address = ModbusRtu_ReadU16(&s_rx_buffer[2]);
+      register_count = ModbusRtu_ReadU16(&s_rx_buffer[4]);
+
+      if ((register_count == 0U) || (register_count > MODBUS_RTU_MAX_READ_REGISTERS))
+      {
+        ModbusRtu_SendException(slave_address, function, MODBUS_EXCEPTION_ILLEGAL_VALUE);
+        return;
+      }
+
+      {
+        uint8_t response[MODBUS_RTU_MAX_FRAME_SIZE];
+        uint16_t index = 0U;
+        uint16_t register_value = 0U;
+        uint8_t byte_count = (uint8_t)(register_count * 2U);
+
+        response[0] = slave_address;
+        response[1] = function;
+        response[2] = byte_count;
+
+        for (index = 0U; index < register_count; ++index)
+        {
+          if (!AnalogInput_ReadInputRegister((uint16_t)(register_address + index), &register_value))
+          {
+            ModbusRtu_SendException(slave_address, function, MODBUS_EXCEPTION_ILLEGAL_ADDRESS);
+            return;
+          }
+
+          ModbusRtu_WriteU16(&response[3U + (index * 2U)], register_value);
+        }
+
+        ModbusRtu_SendResponse(response, (uint8_t)(3U + byte_count));
       }
       break;
 

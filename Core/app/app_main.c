@@ -1,5 +1,6 @@
 #include "app_main.h"
 
+#include "analog_input.h"
 #include "app_config.h"
 #include "device_config.h"
 #include "debug_log.h"
@@ -27,6 +28,15 @@ void app_init(void)
   DEBUG_LOG("i2c2 scan range: 0x08..0x77\r\n");
   I2cBusScan_Run(&i2c_scan_report);
   App_LogI2cScanReport(&i2c_scan_report);
+  AnalogInput_Init((i2c_scan_report.ads1115_found != 0U) ? i2c_scan_report.ads1115_address : 0U);
+  if (i2c_scan_report.ads1115_found != 0U)
+  {
+    DEBUG_LOG("ai ads1115 ready @ 0x%02X\r\n", i2c_scan_report.ads1115_address);
+  }
+  else
+  {
+    DEBUG_LOG("ai ads1115: not found\r\n");
+  }
   s_led_tick_ms = HAL_GetTick();
 }
 
@@ -39,6 +49,7 @@ void app_main(void)
   }
 
   ModbusRtu_Poll(DeviceConfig_GetModbusAddress());
+  AnalogInput_Process();
 }
 
 static void App_LogI2cScanReport(const I2cBusScanReport *report)

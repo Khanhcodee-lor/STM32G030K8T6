@@ -11,6 +11,7 @@ Thư mục này chứa tầng giao tiếp truyền thông ở mức thấp hoặ
 `rs485_ll.c`
 - Cài đặt RS485 mức thấp bằng `USART1`.
 - Điều khiển chân `EN` để chuyển giữa transmit và receive.
+- Nhận byte bằng interrupt + ring buffer để app vẫn poll được I2C nền mà không dễ rơi byte Modbus.
 - Đây là tầng UART/RS485 vật lý, chưa chứa logic nghiệp vụ.
 
 `modbus_rtu.h`
@@ -21,9 +22,11 @@ Thư mục này chứa tầng giao tiếp truyền thông ở mức thấp hoặ
 - Cài đặt Modbus RTU tối thiểu trên nền RS485 hiện tại.
 - Hiện hỗ trợ:
 - `0x03 Read Holding Registers`
+- `0x04 Read Input Registers`
 - `0x06 Write Single Register`
 - Dùng để đọc/ghi thanh ghi địa chỉ Modbus và lưu địa chỉ xuống Flash.
 - Holding Register đang dùng là `0x0001`.
+- Input Register hiện dùng là `0x0000..0x0007` cho AI raw/scaled.
 
 `i2c_bus_scan.h`
 - Khai báo API scan bus `I2C2` và struct báo cáo kết quả scan.
