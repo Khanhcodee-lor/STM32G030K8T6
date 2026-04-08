@@ -6,6 +6,7 @@ Project firmware cho board dùng `STM32G030K8T6`.
 
 - `main.c` chỉ làm nhiệm vụ bootstrap, sau đó chuyển quyền điều phối cho `app_init()` và `app_main()`.
 - Debug log đi qua `USART2` tại header `J3`.
+- I2C test hiện scan `I2C2` một lần lúc boot để tìm thiết bị ngoài.
 - RS485 chạy trên `USART1`, điều khiển chân `EN-485` bằng `PC6`.
 - Modbus RTU hiện hỗ trợ:
   - `0x03 Read Holding Registers`
@@ -62,6 +63,12 @@ Khi board boot, log mẫu:
 boot ok
 modbus addr: 1
 rs485/modbus ready @ 115200
+i2c2 scan range: 0x08..0x77
+i2c2 devices: 2
+i2c2 ack @ 0x48
+i2c2 ack @ 0x60
+ads1115 ack @ 0x48
+mcp4728 ack @ 0x60
 ```
 
 ### 2. Đọc địa chỉ Modbus
@@ -96,11 +103,24 @@ Sau đó cấp nguồn lại board và kiểm tra log:
 modbus addr: <địa chỉ mới>
 ```
 
+### 4. Test bus I2C
+
+Sau khi boot, xem thêm log scan I2C trên cùng cổng debug UART:
+
+- `i2c2 ack @ 0x48..0x4B`: có thiết bị ACK trong dải địa chỉ của `ADS1115`
+- `i2c2 ack @ 0x60..0x67`: có thiết bị ACK trong dải địa chỉ của `MCP4728`
+- `i2c2 scan: no ack`: MCU chưa thấy thiết bị nào trả ACK trên bus
+
+Lưu ý:
+
+- Bước này xác nhận bus và địa chỉ có phản hồi ACK.
+- Đây chưa phải bước định danh tuyệt đối IC bằng thanh ghi riêng của từng chip.
+
 ## Cấu trúc thư mục
 
 - `Core/app`: tầng điều phối chính
 - `Core/config`: hằng số cấu hình và cấu hình lưu Flash
-- `Core/protocols`: RS485 mức thấp và Modbus RTU
+- `Core/protocols`: RS485 mức thấp, Modbus RTU và I2C bus scan
 - `Core/utils`: debug log và tiện ích dùng chung
 
 Mỗi thư mục trên đều có `README.md` riêng để mô tả chi tiết hơn.

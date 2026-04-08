@@ -25,11 +25,19 @@ Thư mục này chứa tầng giao tiếp truyền thông ở mức thấp hoặ
 - Dùng để đọc/ghi thanh ghi địa chỉ Modbus và lưu địa chỉ xuống Flash.
 - Holding Register đang dùng là `0x0001`.
 
+`i2c_bus_scan.h`
+- Khai báo API scan bus `I2C2` và struct báo cáo kết quả scan.
+
+`i2c_bus_scan.c`
+- Quét dải địa chỉ I2C hợp lệ, gom các địa chỉ trả ACK và đánh dấu dải kỳ vọng cho `ADS1115` và `MCP4728`.
+- Dùng cho bước bring-up phần cứng trước khi viết app AI/AO.
+
 ## Ghi chú kỹ thuật
 
 - Theo tài liệu gốc, địa chỉ Modbus lấy từ DIP switch 3 bit.
 - Vì phần cứng hiện tại thiếu DIP switch, module Modbus được dùng để cấu hình địa chỉ slave rồi lưu Flash.
 - Dải địa chỉ áp dụng vẫn là `1..7`.
+- Module scan I2C hiện chỉ xác nhận ACK ở địa chỉ mong đợi, chưa đọc thanh ghi riêng để định danh tuyệt đối IC.
 
 ## Nguyên tắc sử dụng
 

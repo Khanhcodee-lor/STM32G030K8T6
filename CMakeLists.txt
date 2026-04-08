@@ -47,6 +47,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/app/app_main.c
     Core/config/app_config.c
     Core/config/device_config.c
+    Core/protocols/i2c_bus_scan.c
     Core/protocols/modbus_rtu.c
     Core/protocols/rs485_ll.c
     Core/utils/debug_log.c

@@ -16,6 +16,7 @@ Thư mục này chứa tầng điều phối chính của hệ thống.
 - Khởi tạo RS485.
 - Khởi tạo Modbus RTU.
 - In log boot và địa chỉ Modbus hiện tại.
+- Chạy scan `I2C2` một lần lúc boot để kiểm tra ACK của thiết bị ngoài.
 - Chạy heartbeat LED.
 - Poll Modbus RTU liên tục.
 
