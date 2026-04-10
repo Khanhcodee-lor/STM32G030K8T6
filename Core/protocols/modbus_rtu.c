@@ -1,6 +1,7 @@
 #include "modbus_rtu.h"
 
 #include "analog_input.h"
+#include "analog_output.h"
 #include "app_config.h"
 #include "debug_log.h"
 #include "device_config.h"
@@ -8,15 +9,17 @@
 #include "rs485_ll.h"
 #include <string.h>
 
-#define MODBUS_RTU_MAX_FRAME_SIZE 32U
+#define MODBUS_RTU_MAX_FRAME_SIZE          64U
 #define MODBUS_FUNC_READ_HOLDING_REGISTERS 0x03U
 #define MODBUS_FUNC_READ_INPUT_REGISTERS   0x04U
 #define MODBUS_FUNC_WRITE_SINGLE_REGISTER  0x06U
+#define MODBUS_FUNC_WRITE_MULTIPLE_REGS    0x10U
 #define MODBUS_EXCEPTION_ILLEGAL_FUNCTION  0x01U
 #define MODBUS_EXCEPTION_ILLEGAL_ADDRESS   0x02U
 #define MODBUS_EXCEPTION_ILLEGAL_VALUE     0x03U
 #define MODBUS_EXCEPTION_DEVICE_FAILURE    0x04U
 #define MODBUS_RTU_MAX_READ_REGISTERS      ((MODBUS_RTU_MAX_FRAME_SIZE - 5U) / 2U)
+#define MODBUS_RTU_MAX_WRITE_REGISTERS     APP_AO_HOLDING_REG_COUNT
 
 static uint8_t s_rx_buffer[MODBUS_RTU_MAX_FRAME_SIZE];
 static uint8_t s_rx_length;
@@ -29,6 +32,13 @@ static uint32_t s_pending_apply_tick_ms;
 static void ModbusRtu_ResetRxState(void);
 static void ModbusRtu_ApplyPendingAddress(void);
 static void ModbusRtu_ProcessFrame(uint8_t slave_address);
+static bool ModbusRtu_ReadHoldingRegister(uint16_t address, uint16_t *value);
+static bool ModbusRtu_ReadInputRegister(uint16_t address, uint16_t *value);
+static uint8_t ModbusRtu_WriteSingleHoldingRegister(uint16_t address, uint16_t value);
+static uint8_t ModbusRtu_WriteMultipleHoldingRegisters(uint16_t start_address, uint16_t count, const uint8_t *data);
+static uint8_t ModbusRtu_ValidateHoldingRegisterWrite(uint16_t address, uint16_t value);
+static uint16_t ModbusRtu_GetStatusRegister(void);
+static uint16_t ModbusRtu_GetErrorCode(void);
 static uint16_t ModbusRtu_Crc16(const uint8_t *data, uint8_t length);
 static uint16_t ModbusRtu_ReadU16(const uint8_t *data);
 static uint16_t ModbusRtu_ReadLeU16(const uint8_t *data);
@@ -113,7 +123,7 @@ static void ModbusRtu_ProcessFrame(uint8_t slave_address)
   uint16_t frame_crc = 0U;
   uint16_t computed_crc = 0U;
   uint8_t function = 0U;
-  uint16_t register_address = 0U;
+  uint16_t start_address = 0U;
   uint16_t register_count = 0U;
 
   if (s_rx_length < 4U)
@@ -154,32 +164,7 @@ static void ModbusRtu_ProcessFrame(uint8_t slave_address)
         return;
       }
 
-      register_address = ModbusRtu_ReadU16(&s_rx_buffer[2]);
-      if ((register_address != APP_MODBUS_REG_SLAVE_ADDRESS) ||
-          (ModbusRtu_ReadU16(&s_rx_buffer[4]) != 1U))
-      {
-        ModbusRtu_SendException(slave_address, function, MODBUS_EXCEPTION_ILLEGAL_ADDRESS);
-        return;
-      }
-
-      {
-        uint8_t response[7];
-        response[0] = slave_address;
-        response[1] = function;
-        response[2] = 2U;
-        ModbusRtu_WriteU16(&response[3], DeviceConfig_GetModbusAddress());
-        ModbusRtu_SendResponse(response, 5U);
-      }
-      break;
-
-    case MODBUS_FUNC_READ_INPUT_REGISTERS:
-      if (s_rx_length != 8U)
-      {
-        ModbusRtu_SendException(slave_address, function, MODBUS_EXCEPTION_ILLEGAL_VALUE);
-        return;
-      }
-
-      register_address = ModbusRtu_ReadU16(&s_rx_buffer[2]);
+      start_address = ModbusRtu_ReadU16(&s_rx_buffer[2]);
       register_count = ModbusRtu_ReadU16(&s_rx_buffer[4]);
 
       if ((register_count == 0U) || (register_count > MODBUS_RTU_MAX_READ_REGISTERS))
@@ -200,7 +185,48 @@ static void ModbusRtu_ProcessFrame(uint8_t slave_address)
 
         for (index = 0U; index < register_count; ++index)
         {
-          if (!AnalogInput_ReadInputRegister((uint16_t)(register_address + index), &register_value))
+          if (!ModbusRtu_ReadHoldingRegister((uint16_t)(start_address + index), &register_value))
+          {
+            ModbusRtu_SendException(slave_address, function, MODBUS_EXCEPTION_ILLEGAL_ADDRESS);
+            return;
+          }
+
+          ModbusRtu_WriteU16(&response[3U + (index * 2U)], register_value);
+        }
+
+        ModbusRtu_SendResponse(response, (uint8_t)(3U + byte_count));
+      }
+      break;
+
+    case MODBUS_FUNC_READ_INPUT_REGISTERS:
+      if (s_rx_length != 8U)
+      {
+        ModbusRtu_SendException(slave_address, function, MODBUS_EXCEPTION_ILLEGAL_VALUE);
+        return;
+      }
+
+      start_address = ModbusRtu_ReadU16(&s_rx_buffer[2]);
+      register_count = ModbusRtu_ReadU16(&s_rx_buffer[4]);
+
+      if ((register_count == 0U) || (register_count > MODBUS_RTU_MAX_READ_REGISTERS))
+      {
+        ModbusRtu_SendException(slave_address, function, MODBUS_EXCEPTION_ILLEGAL_VALUE);
+        return;
+      }
+
+      {
+        uint8_t response[MODBUS_RTU_MAX_FRAME_SIZE];
+        uint16_t index = 0U;
+        uint16_t register_value = 0U;
+        uint8_t byte_count = (uint8_t)(register_count * 2U);
+
+        response[0] = slave_address;
+        response[1] = function;
+        response[2] = byte_count;
+
+        for (index = 0U; index < register_count; ++index)
+        {
+          if (!ModbusRtu_ReadInputRegister((uint16_t)(start_address + index), &register_value))
           {
             ModbusRtu_SendException(slave_address, function, MODBUS_EXCEPTION_ILLEGAL_ADDRESS);
             return;
@@ -220,33 +246,189 @@ static void ModbusRtu_ProcessFrame(uint8_t slave_address)
         return;
       }
 
-      register_address = ModbusRtu_ReadU16(&s_rx_buffer[2]);
-      if (register_address != APP_MODBUS_REG_SLAVE_ADDRESS)
+      start_address = ModbusRtu_ReadU16(&s_rx_buffer[2]);
       {
-        ModbusRtu_SendException(slave_address, function, MODBUS_EXCEPTION_ILLEGAL_ADDRESS);
+        uint8_t exception_code = ModbusRtu_WriteSingleHoldingRegister(
+            start_address,
+            ModbusRtu_ReadU16(&s_rx_buffer[4]));
+
+        if (exception_code != 0U)
+        {
+          ModbusRtu_SendException(slave_address, function, exception_code);
+          return;
+        }
+      }
+
+      ModbusRtu_SendResponse(s_rx_buffer, 6U);
+      break;
+
+    case MODBUS_FUNC_WRITE_MULTIPLE_REGS:
+      if (s_rx_length < 11U)
+      {
+        ModbusRtu_SendException(slave_address, function, MODBUS_EXCEPTION_ILLEGAL_VALUE);
+        return;
+      }
+
+      start_address = ModbusRtu_ReadU16(&s_rx_buffer[2]);
+      register_count = ModbusRtu_ReadU16(&s_rx_buffer[4]);
+
+      if ((register_count == 0U) || (register_count > MODBUS_RTU_MAX_WRITE_REGISTERS))
+      {
+        ModbusRtu_SendException(slave_address, function, MODBUS_EXCEPTION_ILLEGAL_VALUE);
+        return;
+      }
+
+      if ((s_rx_buffer[6] != (uint8_t)(register_count * 2U)) ||
+          (s_rx_length != (uint8_t)(9U + s_rx_buffer[6])))
+      {
+        ModbusRtu_SendException(slave_address, function, MODBUS_EXCEPTION_ILLEGAL_VALUE);
         return;
       }
 
       {
-        uint16_t requested_address = ModbusRtu_ReadU16(&s_rx_buffer[4]);
-        if ((requested_address < APP_MODBUS_ADDRESS_MIN) ||
-            (requested_address > APP_MODBUS_ADDRESS_MAX))
+        uint8_t exception_code = ModbusRtu_WriteMultipleHoldingRegisters(
+            start_address,
+            register_count,
+            &s_rx_buffer[7]);
+
+        if (exception_code != 0U)
         {
-          ModbusRtu_SendException(slave_address, function, MODBUS_EXCEPTION_ILLEGAL_VALUE);
+          ModbusRtu_SendException(slave_address, function, exception_code);
           return;
         }
-
-        ModbusRtu_SendResponse(s_rx_buffer, 6U);
-        s_pending_address = (uint8_t)requested_address;
-        s_pending_address_valid = 1U;
-        s_pending_apply_tick_ms = HAL_GetTick();
       }
+
+      ModbusRtu_SendResponse(s_rx_buffer, 6U);
       break;
 
     default:
       ModbusRtu_SendException(slave_address, function, MODBUS_EXCEPTION_ILLEGAL_FUNCTION);
       break;
   }
+}
+
+static bool ModbusRtu_ReadHoldingRegister(uint16_t address, uint16_t *value)
+{
+  if (value == NULL)
+  {
+    return false;
+  }
+
+  if (AnalogOutput_ReadHoldingRegister(address, value))
+  {
+    return true;
+  }
+
+  switch (address)
+  {
+    case APP_DEVICE_REG_DEVICE_ID:
+      *value = DeviceConfig_GetModbusAddress();
+      return true;
+
+    case APP_DEVICE_REG_FW_VERSION:
+      *value = APP_FW_VERSION;
+      return true;
+
+    case APP_DEVICE_REG_STATUS:
+      *value = ModbusRtu_GetStatusRegister();
+      return true;
+
+    case APP_DEVICE_REG_ERROR_CODE:
+      *value = ModbusRtu_GetErrorCode();
+      return true;
+
+    default:
+      return false;
+  }
+}
+
+static bool ModbusRtu_ReadInputRegister(uint16_t address, uint16_t *value)
+{
+  return AnalogInput_ReadInputRegister(address, value);
+}
+
+static uint8_t ModbusRtu_WriteSingleHoldingRegister(uint16_t address, uint16_t value)
+{
+  if (address < APP_AO_HOLDING_REG_COUNT)
+  {
+    return AnalogOutput_WriteHoldingRegister(address, value) ? 0U : MODBUS_EXCEPTION_ILLEGAL_VALUE;
+  }
+
+  if (address == APP_DEVICE_REG_DEVICE_ID)
+  {
+    if ((value < APP_MODBUS_ADDRESS_MIN) || (value > APP_MODBUS_ADDRESS_MAX))
+    {
+      return MODBUS_EXCEPTION_ILLEGAL_VALUE;
+    }
+
+    s_pending_address = (uint8_t)value;
+    s_pending_address_valid = 1U;
+    s_pending_apply_tick_ms = HAL_GetTick();
+    return 0U;
+  }
+
+  return MODBUS_EXCEPTION_ILLEGAL_ADDRESS;
+}
+
+static uint8_t ModbusRtu_WriteMultipleHoldingRegisters(uint16_t start_address, uint16_t count, const uint8_t *data)
+{
+  uint16_t index = 0U;
+  uint16_t value = 0U;
+  uint16_t values[APP_AO_HOLDING_REG_COUNT];
+
+  if ((data == NULL) ||
+      (start_address >= APP_AO_HOLDING_REG_COUNT) ||
+      ((start_address + count) > APP_AO_HOLDING_REG_COUNT))
+  {
+    return MODBUS_EXCEPTION_ILLEGAL_ADDRESS;
+  }
+
+  for (index = 0U; index < count; ++index)
+  {
+    value = ModbusRtu_ReadU16(&data[index * 2U]);
+    if (ModbusRtu_ValidateHoldingRegisterWrite((uint16_t)(start_address + index), value) != 0U)
+    {
+      return MODBUS_EXCEPTION_ILLEGAL_VALUE;
+    }
+
+    values[index] = value;
+  }
+
+  return AnalogOutput_WriteHoldingRegisters(start_address, values, count) ? 0U : MODBUS_EXCEPTION_DEVICE_FAILURE;
+}
+
+static uint8_t ModbusRtu_ValidateHoldingRegisterWrite(uint16_t address, uint16_t value)
+{
+  if ((address >= APP_AO_HOLDING_REG_SETPOINT_BASE) &&
+      (address < (APP_AO_HOLDING_REG_SETPOINT_BASE + APP_AO_CHANNEL_COUNT)))
+  {
+    return (value <= APP_AO_SETPOINT_MAX) ? 0U : MODBUS_EXCEPTION_ILLEGAL_VALUE;
+  }
+
+  if ((address >= APP_AO_HOLDING_REG_MODE_BASE) &&
+      (address < (APP_AO_HOLDING_REG_MODE_BASE + APP_AO_CHANNEL_COUNT)))
+  {
+    return (value <= APP_AO_MODE_CURRENT) ? 0U : MODBUS_EXCEPTION_ILLEGAL_VALUE;
+  }
+
+  return MODBUS_EXCEPTION_ILLEGAL_ADDRESS;
+}
+
+static uint16_t ModbusRtu_GetStatusRegister(void)
+{
+  return (uint16_t)(AnalogInput_GetStatus() | AnalogOutput_GetStatus());
+}
+
+static uint16_t ModbusRtu_GetErrorCode(void)
+{
+  uint16_t ao_error = AnalogOutput_GetErrorCode();
+
+  if (ao_error != APP_ERROR_CODE_NONE)
+  {
+    return ao_error;
+  }
+
+  return AnalogInput_GetErrorCode();
 }
 
 static uint16_t ModbusRtu_Crc16(const uint8_t *data, uint8_t length)

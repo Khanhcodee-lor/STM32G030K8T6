@@ -45,6 +45,7 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/app/analog_input.c
+    Core/app/analog_output.c
     Core/app/app_main.c
     Core/config/app_config.c
     Core/config/device_config.c

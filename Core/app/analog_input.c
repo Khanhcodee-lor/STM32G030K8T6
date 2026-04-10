@@ -26,6 +26,8 @@ static uint8_t s_ads1115_address;
 static uint8_t s_current_channel;
 static uint8_t s_sampled_channel_mask;
 static uint32_t s_state_tick_ms;
+static uint16_t s_adc_code_values[APP_AI_CHANNEL_COUNT];
+static uint16_t s_board_raw_values[APP_AI_CHANNEL_COUNT];
 static uint16_t s_raw_values[APP_AI_CHANNEL_COUNT];
 static uint16_t s_scaled_mv_values[APP_AI_CHANNEL_COUNT];
 static uint16_t s_status_register;
@@ -37,6 +39,9 @@ static bool AnalogInput_WriteRegister(uint8_t reg, uint16_t value);
 static bool AnalogInput_ReadRegister(uint8_t reg, uint16_t *value);
 static bool AnalogInput_StartConversion(uint8_t channel);
 static bool AnalogInput_FinishConversion(uint8_t channel);
+static bool AnalogInput_ReadSpecInputRegister(uint16_t address, uint16_t *value);
+static bool AnalogInput_ReadDebugInputRegister(uint16_t address, uint16_t *value);
+/* board raw = normalized raw in the board analog domain, before mapping to the public spec. */
 static uint16_t AnalogInput_ConvertCodeToBoardRaw(uint16_t positive_code);
 static uint16_t AnalogInput_ConvertBoardRawToSpecRaw(uint16_t board_raw_value);
 static uint16_t AnalogInput_ConvertBoardRawToScaledMv(uint16_t board_raw_value);
@@ -45,6 +50,8 @@ static uint8_t AnalogInput_GetMuxConfig(uint8_t channel);
 
 void AnalogInput_Init(uint8_t ads1115_address)
 {
+  (void)memset(s_adc_code_values, 0, sizeof(s_adc_code_values));
+  (void)memset(s_board_raw_values, 0, sizeof(s_board_raw_values));
   (void)memset(s_raw_values, 0, sizeof(s_raw_values));
   (void)memset(s_scaled_mv_values, 0, sizeof(s_scaled_mv_values));
 
@@ -119,26 +126,12 @@ void AnalogInput_Process(void)
 
 bool AnalogInput_ReadInputRegister(uint16_t address, uint16_t *value)
 {
-  if (value == NULL)
+  if (AnalogInput_ReadSpecInputRegister(address, value))
   {
-    return false;
-  }
-
-  if ((address >= APP_AI_INPUT_REG_RAW_BASE) &&
-      (address < (APP_AI_INPUT_REG_RAW_BASE + APP_AI_CHANNEL_COUNT)))
-  {
-    *value = s_raw_values[address - APP_AI_INPUT_REG_RAW_BASE];
     return true;
   }
 
-  if ((address >= APP_AI_INPUT_REG_SCALED_BASE) &&
-      (address < (APP_AI_INPUT_REG_SCALED_BASE + APP_AI_CHANNEL_COUNT)))
-  {
-    *value = s_scaled_mv_values[address - APP_AI_INPUT_REG_SCALED_BASE];
-    return true;
-  }
-
-  return false;
+  return AnalogInput_ReadDebugInputRegister(address, value);
 }
 
 uint16_t AnalogInput_GetStatus(void)
@@ -149,6 +142,54 @@ uint16_t AnalogInput_GetStatus(void)
 uint16_t AnalogInput_GetErrorCode(void)
 {
   return s_error_code;
+}
+
+static bool AnalogInput_ReadSpecInputRegister(uint16_t address, uint16_t *value)
+{
+  if (value == NULL)
+  {
+    return false;
+  }
+
+  if ((address >= APP_AI_SPEC_INPUT_REG_RAW_BASE) &&
+      (address < (APP_AI_SPEC_INPUT_REG_RAW_BASE + APP_AI_CHANNEL_COUNT)))
+  {
+    *value = s_raw_values[address - APP_AI_SPEC_INPUT_REG_RAW_BASE];
+    return true;
+  }
+
+  if ((address >= APP_AI_SPEC_INPUT_REG_SCALED_BASE) &&
+      (address < (APP_AI_SPEC_INPUT_REG_SCALED_BASE + APP_AI_CHANNEL_COUNT)))
+  {
+    *value = s_scaled_mv_values[address - APP_AI_SPEC_INPUT_REG_SCALED_BASE];
+    return true;
+  }
+
+  return false;
+}
+
+static bool AnalogInput_ReadDebugInputRegister(uint16_t address, uint16_t *value)
+{
+  if (value == NULL)
+  {
+    return false;
+  }
+
+  if ((address >= APP_AI_DEBUG_INPUT_REG_BOARD_RAW_BASE) &&
+      (address < (APP_AI_DEBUG_INPUT_REG_BOARD_RAW_BASE + APP_AI_CHANNEL_COUNT)))
+  {
+    *value = s_board_raw_values[address - APP_AI_DEBUG_INPUT_REG_BOARD_RAW_BASE];
+    return true;
+  }
+
+  if ((address >= APP_AI_DEBUG_INPUT_REG_ADC_CODE_BASE) &&
+      (address < (APP_AI_DEBUG_INPUT_REG_ADC_CODE_BASE + APP_AI_CHANNEL_COUNT)))
+  {
+    *value = s_adc_code_values[address - APP_AI_DEBUG_INPUT_REG_ADC_CODE_BASE];
+    return true;
+  }
+
+  return false;
 }
 
 static uint16_t AnalogInput_BuildConfig(uint8_t channel)
@@ -234,7 +275,9 @@ static bool AnalogInput_FinishConversion(uint8_t channel)
     positive_code = (uint16_t)signed_code;
   }
 
+  s_adc_code_values[channel] = positive_code;
   board_raw_value = AnalogInput_ConvertCodeToBoardRaw(positive_code);
+  s_board_raw_values[channel] = board_raw_value;
   s_raw_values[channel] = AnalogInput_ConvertBoardRawToSpecRaw(board_raw_value);
   s_scaled_mv_values[channel] = AnalogInput_ConvertBoardRawToScaledMv(board_raw_value);
   return true;
@@ -264,6 +307,7 @@ static uint16_t AnalogInput_ConvertBoardRawToSpecRaw(uint16_t board_raw_value)
 {
   uint32_t spec_raw_value = board_raw_value;
 
+  /* Ép board raw về dải raw tài liệu yêu cầu: 0..4095 tại 0..10V. */
   if (spec_raw_value >= APP_AI_CALIBRATED_RAW_AT_10V)
   {
     return APP_AI_RAW_MAX;
@@ -280,29 +324,31 @@ static uint16_t AnalogInput_ConvertBoardRawToSpecRaw(uint16_t board_raw_value)
   return (uint16_t)spec_raw_value;
 }
 
-static uint16_t AnalogInput_ConvertBoardRawToScaledMv(uint16_t board_raw_value)
-{
-  uint32_t scaled_mv = board_raw_value;
-
-  /*
-   * Follow the original application note example:
-   * AIx_SCALED = 5000 means Vin = 5.000V, so the register is stored in mV.
-   */
-  if (scaled_mv >= APP_AI_CALIBRATED_RAW_AT_10V)
+  static uint16_t AnalogInput_ConvertBoardRawToScaledMv(uint16_t board_raw_value)
   {
-    return APP_AI_SCALED_MAX_MV;
+    uint32_t scaled_mv = board_raw_value;
+
+    /*
+    * Follow the original application note example:
+    * AIx_SCALED = 5000 means Vin = 5.000V, so the register is stored in mV.
+    * Giá trị đầu vào của hàm này vẫn là board raw, chưa phải spec raw.
+    AI_RAW là giá trị raw chuẩn hóa theo spec 12-bit của module, không phải mã ADC gốc từ ADS1115.
+    */
+    if (scaled_mv >= APP_AI_CALIBRATED_RAW_AT_10V)
+    {
+      return APP_AI_SCALED_MAX_MV;
+    }
+
+    scaled_mv = (scaled_mv * APP_AI_SCALED_MAX_MV + (APP_AI_CALIBRATED_RAW_AT_10V / 2U)) /
+                APP_AI_CALIBRATED_RAW_AT_10V;
+
+    if (scaled_mv > APP_AI_SCALED_MAX_MV)
+    {
+      scaled_mv = APP_AI_SCALED_MAX_MV;
+    }
+
+    return (uint16_t)scaled_mv;
   }
-
-  scaled_mv = (scaled_mv * APP_AI_SCALED_MAX_MV + (APP_AI_CALIBRATED_RAW_AT_10V / 2U)) /
-              APP_AI_CALIBRATED_RAW_AT_10V;
-
-  if (scaled_mv > APP_AI_SCALED_MAX_MV)
-  {
-    scaled_mv = APP_AI_SCALED_MAX_MV;
-  }
-
-  return (uint16_t)scaled_mv;
-}
 
 static void AnalogInput_RecomputeStatus(void)
 {

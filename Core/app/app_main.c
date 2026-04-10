@@ -1,6 +1,7 @@
 #include "app_main.h"
 
 #include "analog_input.h"
+#include "analog_output.h"
 #include "app_config.h"
 #include "device_config.h"
 #include "debug_log.h"
@@ -19,16 +20,17 @@ void app_init(void)
 
   DebugLog_Init();
   DeviceConfig_Init();
-  Rs485Ll_Init(APP_RS485_TEST_BAUDRATE);
+  Rs485Ll_Init(APP_RS485_MODBUS_BAUDRATE);
   ModbusRtu_Init();
   HAL_GPIO_WritePin(LED_TEST_GPIO_Port, LED_TEST_Pin, GPIO_PIN_RESET);
   DEBUG_LOG("boot ok\r\n");
   DEBUG_LOG("modbus addr: %u\r\n", DeviceConfig_GetModbusAddress());
-  DEBUG_LOG("rs485/modbus ready @ %lu\r\n", (unsigned long)APP_RS485_TEST_BAUDRATE);
+  DEBUG_LOG("rs485/modbus ready @ %lu\r\n", (unsigned long)APP_RS485_MODBUS_BAUDRATE);
   DEBUG_LOG("i2c2 scan range: 0x08..0x77\r\n");
   I2cBusScan_Run(&i2c_scan_report);
   App_LogI2cScanReport(&i2c_scan_report);
   AnalogInput_Init((i2c_scan_report.ads1115_found != 0U) ? i2c_scan_report.ads1115_address : 0U);
+  AnalogOutput_Init((i2c_scan_report.mcp4728_found != 0U) ? i2c_scan_report.mcp4728_address : 0U);
   if (i2c_scan_report.ads1115_found != 0U)
   {
     DEBUG_LOG("ai ads1115 ready @ 0x%02X\r\n", i2c_scan_report.ads1115_address);
@@ -36,6 +38,14 @@ void app_init(void)
   else
   {
     DEBUG_LOG("ai ads1115: not found\r\n");
+  }
+  if (i2c_scan_report.mcp4728_found != 0U)
+  {
+    DEBUG_LOG("ao mcp4728 ready @ 0x%02X\r\n", i2c_scan_report.mcp4728_address);
+  }
+  else
+  {
+    DEBUG_LOG("ao mcp4728: not found\r\n");
   }
   s_led_tick_ms = HAL_GetTick();
 }
@@ -50,6 +60,7 @@ void app_main(void)
 
   ModbusRtu_Poll(DeviceConfig_GetModbusAddress());
   AnalogInput_Process();
+  AnalogOutput_Process();
 }
 
 static void App_LogI2cScanReport(const I2cBusScanReport *report)

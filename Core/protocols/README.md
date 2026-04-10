@@ -24,9 +24,11 @@ Thư mục này chứa tầng giao tiếp truyền thông ở mức thấp hoặ
 - `0x03 Read Holding Registers`
 - `0x04 Read Input Registers`
 - `0x06 Write Single Register`
-- Dùng để đọc/ghi thanh ghi địa chỉ Modbus và lưu địa chỉ xuống Flash.
-- Holding Register đang dùng là `0x0001`.
-- Input Register hiện dùng là `0x0000..0x0007` cho AI raw/scaled.
+- `0x10 Write Multiple Registers`
+- Dùng để đọc/ghi thanh ghi AO và vùng device info/diagnostics.
+- `DEVICE_ID` hiện nằm ở Holding Register `0x0008`.
+- Input Register public hiện dùng là `0x0000..0x0007` cho AI raw/scaled.
+- Vùng `0x0100..0x0107` được giữ làm input register `internal/debug` cho board raw và ADC code.
 
 `i2c_bus_scan.h`
 - Khai báo API scan bus `I2C2` và struct báo cáo kết quả scan.

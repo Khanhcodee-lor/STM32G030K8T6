@@ -1,5 +1,6 @@
 #include "debug_log.h"
 
+#include "app_config.h"
 #include "main.h"
 #include <string.h>
 
@@ -7,13 +8,19 @@ static void DebugLog_WriteByte(uint8_t byte);
 
 void DebugLog_Init(void)
 {
-  /* USART2 runs on PCLK1 = 16 MHz in the current clock tree. */
+  uint32_t usart_clock_hz = HAL_RCC_GetPCLK1Freq();
+
+  if (usart_clock_hz == 0U)
+  {
+    usart_clock_hz = 16000000UL;
+  }
+
   RCC->APBENR1 |= RCC_APBENR1_USART2EN;
 
   USART2->CR1 = 0U;
   USART2->CR2 = 0U;
   USART2->CR3 = 0U;
-  USART2->BRR = 139U;
+  USART2->BRR = (usart_clock_hz + (APP_DEBUG_UART_BAUDRATE / 2U)) / APP_DEBUG_UART_BAUDRATE;
   USART2->CR1 = USART_CR1_UE | USART_CR1_TE | USART_CR1_RE;
 }
 
