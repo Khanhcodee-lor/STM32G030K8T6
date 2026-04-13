@@ -3,8 +3,8 @@
 #include "analog_input.h"
 #include "analog_output.h"
 #include "app_config.h"
+#include "bsp.h"
 #include "debug_log.h"
-#include "device_config.h"
 #include "main.h"
 #include "rs485_ll.h"
 #include <string.h>
@@ -100,21 +100,14 @@ static void ModbusRtu_ApplyPendingAddress(void)
     return;
   }
 
-  if (!DeviceConfig_SetModbusAddress(s_pending_address))
-  {
-    DEBUG_LOG("modbus addr set failed: %u\r\n", (unsigned int)s_pending_address);
-    s_pending_address_valid = 0U;
-    return;
-  }
-
-  if (!DeviceConfig_Save())
+  if (!bsp_set_modbus_address(s_pending_address))
   {
     DEBUG_LOG("modbus addr save failed: %u\r\n", (unsigned int)s_pending_address);
     s_pending_address_valid = 0U;
     return;
   }
 
-  DEBUG_LOG("modbus addr saved: %u\r\n", (unsigned int)DeviceConfig_GetModbusAddress());
+  DEBUG_LOG("modbus addr saved: %u\r\n", (unsigned int)bsp_get_modbus_address());
   s_pending_address_valid = 0U;
 }
 
@@ -322,7 +315,7 @@ static bool ModbusRtu_ReadHoldingRegister(uint16_t address, uint16_t *value)
   switch (address)
   {
     case APP_DEVICE_REG_DEVICE_ID:
-      *value = DeviceConfig_GetModbusAddress();
+      *value = bsp_get_modbus_address();
       return true;
 
     case APP_DEVICE_REG_FW_VERSION:
