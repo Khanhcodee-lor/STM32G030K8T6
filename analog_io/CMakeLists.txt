@@ -18,7 +18,7 @@ add_executable(${PROJECT_NAME}.elf
     bsp/bsp.c
     services/analog_io_service/analog_io_service.c
     services/modbus_service/modbus_service.c
-    services/i2c_bus_scan.c
+    services/i2c_bus_scan/i2c_bus_scan.c
     drivers/adc/adc.c
     drivers/dac/dac.c
     drivers/rs485/rs485.c
@@ -63,6 +63,7 @@ target_include_directories(${PROJECT_NAME}.elf PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/rs485
     ${CMAKE_CURRENT_SOURCE_DIR}/services
     ${CMAKE_CURRENT_SOURCE_DIR}/services/analog_io_service
+    ${CMAKE_CURRENT_SOURCE_DIR}/services/i2c_bus_scan
     ${CMAKE_CURRENT_SOURCE_DIR}/services/modbus_service
     ${CMAKE_CURRENT_SOURCE_DIR}/components/analog_core
     ${CMAKE_CURRENT_SOURCE_DIR}/components/modbus_rtu

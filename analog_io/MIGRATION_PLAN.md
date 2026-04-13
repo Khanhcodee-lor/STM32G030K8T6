@@ -13,6 +13,7 @@
   - app/main.c
   - bsp/bsp.c
   - services/modbus_service/
+  - services/i2c_bus_scan/
   - services/analog_io_service/
   - drivers/adc, drivers/dac, drivers/rs485
   - platform/pal, platform/mcu
