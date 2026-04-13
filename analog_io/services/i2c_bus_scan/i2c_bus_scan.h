@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#define I2C_BUS_SCAN_ADDR_MIN          0x08U
+#define I2C_BUS_SCAN_ADDR_MAX          0x77U
 #define I2C_BUS_SCAN_MAX_FOUND_DEVICES 16U
 
 typedef struct
@@ -16,6 +18,8 @@ typedef struct
   uint8_t mcp4728_address;
 } I2cBusScanReport;
 
+void I2cBusScan_ResetReport(I2cBusScanReport *report);
+void I2cBusScan_ScanAddress(I2cBusScanReport *report, uint8_t address);
 void I2cBusScan_Run(I2cBusScanReport *report);
 
 #endif /* I2C_BUS_SCAN_H */

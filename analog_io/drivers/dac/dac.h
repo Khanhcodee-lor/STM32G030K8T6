@@ -6,6 +6,8 @@
 
 void dac_init(uint8_t address);
 void dac_process(void);
+void dac_reset_to_safe_defaults(void);
+bool dac_apply_safe_state_blocking(uint32_t timeout_ms);
 bool dac_read_holding_register(uint16_t address, uint16_t *value);
 bool dac_write_holding_register(uint16_t address, uint16_t value);
 bool dac_write_holding_registers(uint16_t start_address, const uint16_t *values, uint16_t count);

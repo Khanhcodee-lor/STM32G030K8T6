@@ -28,6 +28,7 @@ static uint8_t s_is_receiving;
 static uint8_t s_pending_address;
 static uint8_t s_pending_address_valid;
 static uint32_t s_pending_apply_tick_ms;
+static uint16_t s_last_error_code;
 
 static void ModbusRtu_ResetRxState(void);
 static void ModbusRtu_ApplyPendingAddress(void);
@@ -38,7 +39,9 @@ static uint8_t ModbusRtu_WriteSingleHoldingRegister(uint16_t address, uint16_t v
 static uint8_t ModbusRtu_WriteMultipleHoldingRegisters(uint16_t start_address, uint16_t count, const uint8_t *data);
 static uint8_t ModbusRtu_ValidateHoldingRegisterWrite(uint16_t address, uint16_t value);
 static uint16_t ModbusRtu_GetStatusRegister(void);
+static uint16_t ModbusRtu_GetCurrentErrorCode(void);
 static uint16_t ModbusRtu_GetErrorCode(void);
+static void ModbusRtu_UpdateLatchedErrorCode(void);
 static uint16_t ModbusRtu_Crc16(const uint8_t *data, uint8_t length);
 static uint16_t ModbusRtu_ReadU16(const uint8_t *data);
 static uint16_t ModbusRtu_ReadLeU16(const uint8_t *data);
@@ -53,11 +56,14 @@ void ModbusRtu_Init(void)
   s_pending_address = 0U;
   s_pending_address_valid = 0U;
   s_pending_apply_tick_ms = 0U;
+  s_last_error_code = APP_ERROR_CODE_NONE;
 }
 
 void ModbusRtu_Poll(uint8_t slave_address)
 {
   uint8_t byte = 0U;
+
+  ModbusRtu_UpdateLatchedErrorCode();
 
   while (Rs485Ll_ReadByte(&byte))
   {
@@ -406,10 +412,17 @@ static uint8_t ModbusRtu_ValidateHoldingRegisterWrite(uint16_t address, uint16_t
 
 static uint16_t ModbusRtu_GetStatusRegister(void)
 {
-  return (uint16_t)(AnalogInput_GetStatus() | AnalogOutput_GetStatus());
+  uint16_t status = (uint16_t)(AnalogInput_GetStatus() | AnalogOutput_GetStatus());
+
+  if ((status & APP_STATUS_AO_FAULT_BIT) != 0U)
+  {
+    status &= (uint16_t)~APP_STATUS_MODULE_READY_BIT;
+  }
+
+  return status;
 }
 
-static uint16_t ModbusRtu_GetErrorCode(void)
+static uint16_t ModbusRtu_GetCurrentErrorCode(void)
 {
   uint16_t ao_error = AnalogOutput_GetErrorCode();
 
@@ -419,6 +432,22 @@ static uint16_t ModbusRtu_GetErrorCode(void)
   }
 
   return AnalogInput_GetErrorCode();
+}
+
+static uint16_t ModbusRtu_GetErrorCode(void)
+{
+  ModbusRtu_UpdateLatchedErrorCode();
+  return s_last_error_code;
+}
+
+static void ModbusRtu_UpdateLatchedErrorCode(void)
+{
+  uint16_t current_error = ModbusRtu_GetCurrentErrorCode();
+
+  if (current_error != APP_ERROR_CODE_NONE)
+  {
+    s_last_error_code = current_error;
+  }
 }
 
 static uint16_t ModbusRtu_Crc16(const uint8_t *data, uint8_t length)

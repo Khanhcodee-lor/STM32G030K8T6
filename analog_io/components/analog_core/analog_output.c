@@ -10,6 +10,7 @@
 #define MCP4728_GENERAL_CALL_UPDATE  0x08U
 #define MCP4728_MULTI_WRITE_COMMAND  0x40U
 #define MCP4728_MULTI_WRITE_STRIDE   3U
+#define MCP4728_BOOTSTRAP_ADDR_TRIALS APP_I2C_SCAN_READY_TRIALS
 
 extern I2C_HandleTypeDef hi2c2;
 
@@ -21,11 +22,16 @@ static uint16_t s_setpoints[MODBUS_MAP_AO_CHANNEL_COUNT];
 static uint16_t s_modes[MODBUS_MAP_AO_CHANNEL_COUNT];
 static uint16_t s_status_register;
 static uint16_t s_error_code;
+static uint8_t s_shadow_state_loaded;
 
 static bool AnalogOutput_IsSetpointRegisterAddress(uint16_t address);
 static bool AnalogOutput_IsModeRegisterAddress(uint16_t address);
 static bool AnalogOutput_FlushOutputs(void);
+static bool AnalogOutput_FlushOutputsToAddress(uint8_t mcp4728_address, uint8_t pd_override_enable, uint8_t pd_override_bits);
 static void AnalogOutput_MarkDirty(void);
+static void AnalogOutput_LoadSafeDefaults(void);
+static bool AnalogOutput_IsValidDeviceAddress(uint8_t mcp4728_address);
+static bool AnalogOutput_ProbeDeviceAddress(uint8_t *mcp4728_address);
 static uint16_t AnalogOutput_ConvertSetpointToDacCode(uint16_t setpoint, uint16_t mode);
 static uint8_t AnalogOutput_GetModeVrefBit(uint16_t mode);
 static uint8_t AnalogOutput_GetModePdBits(uint16_t mode);
@@ -33,24 +39,25 @@ static uint8_t AnalogOutput_GetModeGainBit(uint16_t mode);
 
 void AnalogOutput_Init(uint8_t mcp4728_address)
 {
-  (void)memset(s_setpoints, 0, sizeof(s_setpoints));
-  (void)memset(s_modes, 0, sizeof(s_modes));
+  if (s_shadow_state_loaded == 0U)
+  {
+    AnalogOutput_ResetToSafeDefaults();
+  }
 
-  s_dirty = 0U;
   s_apply_tick_ms = HAL_GetTick();
   s_retry_tick_ms = 0U;
-  s_status_register = 0U;
-  s_error_code = APP_ERROR_CODE_NONE;
 
-  if ((mcp4728_address < MCP4728_ADDRESS_MIN) || (mcp4728_address > MCP4728_ADDRESS_MAX))
+  if (!AnalogOutput_IsValidDeviceAddress(mcp4728_address))
   {
     s_mcp4728_address = 0U;
-    s_status_register = APP_STATUS_AO_FAULT_BIT;
+    s_status_register |= APP_STATUS_AO_FAULT_BIT;
     s_error_code = APP_ERROR_CODE_AO_DAC_FAULT;
     return;
   }
 
   s_mcp4728_address = mcp4728_address;
+  s_status_register &= (uint16_t)~APP_STATUS_AO_FAULT_BIT;
+  s_error_code = APP_ERROR_CODE_NONE;
   AnalogOutput_MarkDirty();
 }
 
@@ -83,6 +90,62 @@ void AnalogOutput_Process(void)
     s_error_code = APP_ERROR_CODE_AO_DAC_FAULT;
     s_retry_tick_ms = HAL_GetTick();
   }
+}
+
+void AnalogOutput_ResetToSafeDefaults(void)
+{
+  AnalogOutput_LoadSafeDefaults();
+  s_shadow_state_loaded = 1U;
+  s_mcp4728_address = 0U;
+  s_dirty = 0U;
+  s_apply_tick_ms = HAL_GetTick();
+  s_retry_tick_ms = 0U;
+  s_status_register = 0U;
+  s_error_code = APP_ERROR_CODE_NONE;
+}
+
+bool AnalogOutput_ApplySafeStateBlocking(uint32_t timeout_ms)
+{
+  uint32_t start_tick_ms = HAL_GetTick();
+  uint8_t mcp4728_address = s_mcp4728_address;
+
+  if (s_shadow_state_loaded == 0U)
+  {
+    AnalogOutput_ResetToSafeDefaults();
+  }
+
+  if (!AnalogOutput_IsValidDeviceAddress(mcp4728_address) &&
+      !AnalogOutput_ProbeDeviceAddress(&mcp4728_address))
+  {
+    s_mcp4728_address = 0U;
+    s_status_register |= APP_STATUS_AO_FAULT_BIT;
+    s_error_code = APP_ERROR_CODE_AO_DAC_FAULT;
+    return false;
+  }
+
+  while ((HAL_GetTick() - start_tick_ms) < timeout_ms)
+  {
+    if (!AnalogOutput_FlushOutputsToAddress(mcp4728_address, 1U, APP_AO_SAFE_BOOT_HOLD_PD_BITS))
+    {
+      continue;
+    }
+
+    if (!AnalogOutput_FlushOutputsToAddress(mcp4728_address, 0U, 0U))
+    {
+      continue;
+    }
+
+    s_mcp4728_address = mcp4728_address;
+    s_dirty = 0U;
+    s_status_register &= (uint16_t)~APP_STATUS_AO_FAULT_BIT;
+    s_error_code = APP_ERROR_CODE_NONE;
+    return true;
+  }
+
+  s_mcp4728_address = 0U;
+  s_status_register |= APP_STATUS_AO_FAULT_BIT;
+  s_error_code = APP_ERROR_CODE_AO_DAC_FAULT;
+  return false;
 }
   
 bool AnalogOutput_ReadHoldingRegister(uint16_t address, uint16_t *value)
@@ -204,6 +267,11 @@ static bool AnalogOutput_IsModeRegisterAddress(uint16_t address)
 
 static bool AnalogOutput_FlushOutputs(void)
 {
+  return AnalogOutput_FlushOutputsToAddress(s_mcp4728_address, 0U, 0U);
+}
+
+static bool AnalogOutput_FlushOutputsToAddress(uint8_t mcp4728_address, uint8_t pd_override_enable, uint8_t pd_override_bits)
+{
   uint8_t frame[MODBUS_MAP_AO_CHANNEL_COUNT * MCP4728_MULTI_WRITE_STRIDE];
   uint8_t channel = 0U;
   uint8_t general_call_command = MCP4728_GENERAL_CALL_UPDATE;
@@ -217,7 +285,7 @@ static bool AnalogOutput_FlushOutputs(void)
   {
     channel_frame = &frame[channel * MCP4728_MULTI_WRITE_STRIDE];
     vref_bit = AnalogOutput_GetModeVrefBit(s_modes[channel]);
-    pd_bits = AnalogOutput_GetModePdBits(s_modes[channel]);
+    pd_bits = (pd_override_enable != 0U) ? (pd_override_bits & 0x03U) : AnalogOutput_GetModePdBits(s_modes[channel]);
     gain_bit = AnalogOutput_GetModeGainBit(s_modes[channel]);
     dac_code = AnalogOutput_ConvertSetpointToDacCode(s_setpoints[channel], s_modes[channel]);
 
@@ -233,7 +301,7 @@ static bool AnalogOutput_FlushOutputs(void)
 
   if (HAL_I2C_Master_Transmit(
           &hi2c2,
-          (uint16_t)(s_mcp4728_address << 1U),
+          (uint16_t)(mcp4728_address << 1U),
           frame,
           sizeof(frame),
           APP_AO_MCP4728_I2C_TIMEOUT_MS) != HAL_OK)
@@ -253,6 +321,48 @@ static void AnalogOutput_MarkDirty(void)
 {
   s_dirty = 1U;
   s_apply_tick_ms = HAL_GetTick();
+}
+
+static void AnalogOutput_LoadSafeDefaults(void)
+{
+  s_setpoints[0] = APP_AO_SAFE_DEFAULT_CH1_SETPOINT;
+  s_setpoints[1] = APP_AO_SAFE_DEFAULT_CH2_SETPOINT;
+  s_setpoints[2] = APP_AO_SAFE_DEFAULT_CH3_SETPOINT;
+  s_setpoints[3] = APP_AO_SAFE_DEFAULT_CH4_SETPOINT;
+  s_modes[0] = APP_AO_SAFE_DEFAULT_CH1_MODE;
+  s_modes[1] = APP_AO_SAFE_DEFAULT_CH2_MODE;
+  s_modes[2] = APP_AO_SAFE_DEFAULT_CH3_MODE;
+  s_modes[3] = APP_AO_SAFE_DEFAULT_CH4_MODE;
+}
+
+static bool AnalogOutput_IsValidDeviceAddress(uint8_t mcp4728_address)
+{
+  return (mcp4728_address >= MCP4728_ADDRESS_MIN) && (mcp4728_address <= MCP4728_ADDRESS_MAX);
+}
+
+static bool AnalogOutput_ProbeDeviceAddress(uint8_t *mcp4728_address)
+{
+  uint8_t address = 0U;
+
+  if (mcp4728_address == NULL)
+  {
+    return false;
+  }
+
+  for (address = MCP4728_ADDRESS_MIN; address <= MCP4728_ADDRESS_MAX; ++address)
+  {
+    if (HAL_I2C_IsDeviceReady(
+            &hi2c2,
+            (uint16_t)(address << 1U),
+            MCP4728_BOOTSTRAP_ADDR_TRIALS,
+            APP_I2C_SCAN_TIMEOUT_MS) == HAL_OK)
+    {
+      *mcp4728_address = address;
+      return true;
+    }
+  }
+
+  return false;
 }
 
 static uint16_t AnalogOutput_ConvertSetpointToDacCode(uint16_t setpoint, uint16_t mode)
