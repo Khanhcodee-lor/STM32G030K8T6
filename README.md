@@ -4,17 +4,29 @@ Project firmware cho board dùng `STM32G030K8T6`.
 
 ## Trạng thái hiện tại
 
-- `main.c` chỉ làm nhiệm vụ bootstrap, sau đó chuyển quyền điều phối cho `app_init()` và `app_main()`.
+- Flow chạy thật hiện nằm trong `analog_io/`.
+- Entry point hiện tại là `analog_io/app/main.c`.
+- `main()` gọi theo thứ tự:
+  - `bsp_init()`
+  - `modbus_service_init()`
+  - `analog_io_service_init()`
+  - vòng lặp `modbus_service_run_once()` + `analog_io_service_run_once()` + heartbeat LED
 - Debug log đi qua `USART2` tại header `J3`.
-- I2C test hiện scan `I2C2` một lần lúc boot để tìm thiết bị ngoài.
-- AI hiện đọc `ADS1115` theo vòng 4 kênh và expose qua `Input Registers (FC04)`.
-- AO hiện ghi `MCP4728` theo 4 kênh và expose qua `Holding Registers`.
+- I2C scan `I2C2` một lần lúc boot để tìm thiết bị ngoài.
+- AI đọc `ADS1115` theo vòng 4 kênh và expose qua `Input Registers (FC04)`.
+- AO ghi `MCP4728` theo 4 kênh và expose qua `Holding Registers`.
 - RS485 chạy trên `USART1`, điều khiển chân `EN-485` bằng `PC6`.
 - Modbus RTU hiện hỗ trợ:
   - `0x03 Read Holding Registers`
   - `0x04 Read Input Registers`
   - `0x06 Write Single Register`
   - `0x10 Write Multiple Registers`
+
+## Build và debug đang dùng
+
+- Build target hiện tại: `analog_io/build/analog_io.elf`
+- VS Code debug hiện đã trỏ sang `analog_io/build/analog_io.elf`
+- File `analog_io/app/app_main.c` không còn được dùng nữa và đã bị loại bỏ khỏi flow mới
 
 ## Lưu ý so với tài liệu gốc
 
@@ -179,11 +191,14 @@ Lưu ý:
 - `AO_MODE` hiện được expose đúng map Modbus và giữ trong firmware.
 - Việc ngõ ra thực tế là `0..10V` hay `4..20mA` còn phụ thuộc mạch phần cứng của từng kênh.
 
-## Cấu trúc thư mục
+## Cấu trúc thư mục đang dùng
 
-- `Core/app`: tầng điều phối chính
-- `Core/config`: hằng số cấu hình và cấu hình lưu Flash
-- `Core/protocols`: RS485 mức thấp, Modbus RTU và I2C bus scan
-- `Core/utils`: debug log và tiện ích dùng chung
+- `analog_io/app`: entry point
+- `analog_io/bsp`: init clock, GPIO, I2C, heartbeat, device address access
+- `analog_io/services`: flow mức service như `modbus_service`, `analog_io_service`, `i2c_bus_scan`
+- `analog_io/drivers`: wrapper cho ADC, DAC, RS485
+- `analog_io/components`: logic Modbus, AI, AO
+- `analog_io/platform`: PAL, MCU startup, IRQ, linker
+- `analog_io/config`: hằng số cấu hình và cấu hình lưu Flash
 
-Mỗi thư mục trên đều có `README.md` riêng để mô tả chi tiết hơn.
+`Core/*` hiện chỉ còn là phần di sản của flow cũ, không phải entry flow đang debug.

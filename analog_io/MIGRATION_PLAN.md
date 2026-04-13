@@ -9,13 +9,14 @@
   - drivers/
   - platform/
   - services/
-- Code da co trong analog_io:
-  - app/app_main.c
-  - app/app_main.h
-  - config/app_config.c
-  - config/app_config.h
-  - config/device_config.c
-  - config/device_config.h
+- Base HAL moi dang chay theo flow:
+  - app/main.c
+  - bsp/bsp.c
+  - services/modbus_service/
+  - services/analog_io_service/
+  - drivers/adc, drivers/dac, drivers/rs485
+  - platform/pal, platform/mcu
+  - config/app_config.*, config/device_config.*, config/config.h
 
 ## Muc tieu layout
 - app/: entry point va startup flow
@@ -42,13 +43,13 @@
 | STM32G030XX_FLASH.ld | platform/mcu/stm32g0xx/STM32G030XX_FLASH.ld | Linker script |
 
 ## Thu tu migrate de giam rui ro
-1. Tao CMake target rieng cho analog_io (chua thay doi build hien tai).
-2. Port modbus parser sang components/modbus_rtu (giu API cu de test hoi quy).
-3. Port rs485 sang drivers/rs485 va pal uart/gpio.
-4. Port analog input/output sang components/analog_core + drivers adc/dac.
-5. Dua startup/irq/system/linker vao platform/mcu/stm32g0xx.
-6. Chot co che Device ID theo DIP switch read-once trong bsp.
-7. Neu can FreeRTOS: tao services task + osal wrapper.
+1. Da tao CMake target rieng cho analog_io va build/debug tu analog_io/build.
+2. Da tach main moi sang app/main.c.
+3. Da tach bootstrap sang bsp/bsp.c.
+4. Da tach flow polling sang services/modbus_service va services/analog_io_service.
+5. Da dua startup/irq/system/linker vao platform/mcu.
+6. Da them driver wrapper cho adc/dac/rs485.
+7. Con lai: neu muon sach hon nua thi xoa hoan toan root flow cu va cap nhat tai lieu/CI.
 
 ## Khac biet quan trong voi yeu cau cong ty
 - Hien tai code dang dung HAL.
