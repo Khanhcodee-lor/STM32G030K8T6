@@ -8,6 +8,8 @@
 #define MCP4728_ADDRESS_MAX          0x67U
 #define MCP4728_GENERAL_CALL_ADDRESS 0x00U
 #define MCP4728_GENERAL_CALL_UPDATE  0x08U
+#define MCP4728_MULTI_WRITE_COMMAND  0x40U
+#define MCP4728_MULTI_WRITE_STRIDE   3U
 
 extern I2C_HandleTypeDef hi2c2;
 
@@ -20,9 +22,13 @@ static uint16_t s_modes[APP_AO_CHANNEL_COUNT];
 static uint16_t s_status_register;
 static uint16_t s_error_code;
 
-static bool AnalogOutput_IsHoldingRegisterAddress(uint16_t address);
+static bool AnalogOutput_IsSetpointRegisterAddress(uint16_t address);
+static bool AnalogOutput_IsModeRegisterAddress(uint16_t address);
 static bool AnalogOutput_FlushOutputs(void);
 static void AnalogOutput_MarkDirty(void);
+static uint8_t AnalogOutput_GetModeVrefBit(uint16_t mode);
+static uint8_t AnalogOutput_GetModePdBits(uint16_t mode);
+static uint8_t AnalogOutput_GetModeGainBit(uint16_t mode);
 
 void AnalogOutput_Init(uint8_t mcp4728_address)
 {
@@ -85,8 +91,7 @@ bool AnalogOutput_ReadHoldingRegister(uint16_t address, uint16_t *value)
     return false;
   }
 
-  if ((address >= APP_AO_HOLDING_REG_SETPOINT_BASE) &&
-      (address < (APP_AO_HOLDING_REG_SETPOINT_BASE + APP_AO_CHANNEL_COUNT)))
+  if (AnalogOutput_IsSetpointRegisterAddress(address))
   {
     *value = s_setpoints[address - APP_AO_HOLDING_REG_SETPOINT_BASE];
     return true;
@@ -103,8 +108,7 @@ bool AnalogOutput_WriteHoldingRegister(uint16_t address, uint16_t value)
     return false;
   }
 
-  if ((address >= APP_AO_HOLDING_REG_SETPOINT_BASE) &&
-      (address < (APP_AO_HOLDING_REG_SETPOINT_BASE + APP_AO_CHANNEL_COUNT)))
+  if (AnalogOutput_IsSetpointRegisterAddress(address))
   {
     if (value > APP_AO_SETPOINT_MAX)
     {
@@ -116,12 +120,18 @@ bool AnalogOutput_WriteHoldingRegister(uint16_t address, uint16_t value)
     return true;
   }
 
+  if (!AnalogOutput_IsModeRegisterAddress(address))
+  {
+    return false;
+  }
+
   if (value > APP_AO_MODE_CURRENT)
   {
     return false;
   }
 
   s_modes[address - APP_AO_HOLDING_REG_MODE_BASE] = value;
+  AnalogOutput_MarkDirty();
   return true;
 }
 
@@ -155,21 +165,67 @@ uint16_t AnalogOutput_GetErrorCode(void)
   return s_error_code;
 }
 
-static bool AnalogOutput_IsHoldingRegisterAddress(uint16_t address)
+bool AnalogOutput_IsHoldingRegisterAddress(uint16_t address)
 {
-  return (address < APP_AO_HOLDING_REG_COUNT);
+  return AnalogOutput_IsSetpointRegisterAddress(address) ||
+         AnalogOutput_IsModeRegisterAddress(address);
+}
+
+bool AnalogOutput_IsHoldingRegisterRange(uint16_t start_address, uint16_t count)
+{
+  uint16_t index = 0U;
+
+  if (count == 0U)
+  {
+    return false;
+  }
+
+  for (index = 0U; index < count; ++index)
+  {
+    if (!AnalogOutput_IsHoldingRegisterAddress((uint16_t)(start_address + index)))
+    {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+static bool AnalogOutput_IsSetpointRegisterAddress(uint16_t address)
+{
+  return (uint16_t)(address - APP_AO_HOLDING_REG_SETPOINT_BASE) < APP_AO_CHANNEL_COUNT;
+}
+
+static bool AnalogOutput_IsModeRegisterAddress(uint16_t address)
+{
+  return (uint16_t)(address - APP_AO_HOLDING_REG_MODE_BASE) < APP_AO_CHANNEL_COUNT;
 }
 
 static bool AnalogOutput_FlushOutputs(void)
 {
-  uint8_t frame[APP_AO_CHANNEL_COUNT * 2U];
+  uint8_t frame[APP_AO_CHANNEL_COUNT * MCP4728_MULTI_WRITE_STRIDE];
   uint8_t channel = 0U;
   uint8_t general_call_command = MCP4728_GENERAL_CALL_UPDATE;
+  uint8_t *channel_frame = NULL;
+  uint8_t vref_bit = 0U;
+  uint8_t pd_bits = 0U;
+  uint8_t gain_bit = 0U;
 
   for (channel = 0U; channel < APP_AO_CHANNEL_COUNT; ++channel)
   {
-    frame[channel * 2U] = (uint8_t)((s_setpoints[channel] >> 8U) & 0x0FU);
-    frame[channel * 2U + 1U] = (uint8_t)(s_setpoints[channel] & 0x00FFU);
+    channel_frame = &frame[channel * MCP4728_MULTI_WRITE_STRIDE];
+    vref_bit = AnalogOutput_GetModeVrefBit(s_modes[channel]);
+    pd_bits = AnalogOutput_GetModePdBits(s_modes[channel]);
+    gain_bit = AnalogOutput_GetModeGainBit(s_modes[channel]);
+
+    channel_frame[0] = (uint8_t)(MCP4728_MULTI_WRITE_COMMAND |
+                                 ((channel & 0x03U) << 1U) |
+                                 (APP_AO_MCP4728_UDAC_BIT & 0x01U));
+    channel_frame[1] = (uint8_t)(((vref_bit & 0x01U) << 7U) |
+                                 ((pd_bits & 0x03U) << 5U) |
+                                 ((gain_bit & 0x01U) << 4U) |
+                                 ((s_setpoints[channel] >> 8U) & 0x0FU));
+    channel_frame[2] = (uint8_t)(s_setpoints[channel] & 0x00FFU);
   }
 
   if (HAL_I2C_Master_Transmit(
@@ -194,4 +250,34 @@ static void AnalogOutput_MarkDirty(void)
 {
   s_dirty = 1U;
   s_apply_tick_ms = HAL_GetTick();
+}
+
+static uint8_t AnalogOutput_GetModeVrefBit(uint16_t mode)
+{
+  if (mode == APP_AO_MODE_CURRENT)
+  {
+    return APP_AO_MCP4728_MODE_CURRENT_VREF_BIT & 0x01U;
+  }
+
+  return APP_AO_MCP4728_MODE_VOLTAGE_VREF_BIT & 0x01U;
+}
+
+static uint8_t AnalogOutput_GetModePdBits(uint16_t mode)
+{
+  if (mode == APP_AO_MODE_CURRENT)
+  {
+    return APP_AO_MCP4728_MODE_CURRENT_PD_BITS & 0x03U;
+  }
+
+  return APP_AO_MCP4728_MODE_VOLTAGE_PD_BITS & 0x03U;
+}
+
+static uint8_t AnalogOutput_GetModeGainBit(uint16_t mode)
+{
+  if (mode == APP_AO_MODE_CURRENT)
+  {
+    return APP_AO_MCP4728_MODE_CURRENT_GAIN_BIT & 0x01U;
+  }
+
+  return APP_AO_MCP4728_MODE_VOLTAGE_GAIN_BIT & 0x01U;
 }

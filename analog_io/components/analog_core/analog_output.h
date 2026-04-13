@@ -6,6 +6,8 @@
 
 void AnalogOutput_Init(uint8_t mcp4728_address);
 void AnalogOutput_Process(void);
+bool AnalogOutput_IsHoldingRegisterAddress(uint16_t address);
+bool AnalogOutput_IsHoldingRegisterRange(uint16_t start_address, uint16_t count);
 bool AnalogOutput_ReadHoldingRegister(uint16_t address, uint16_t *value);
 bool AnalogOutput_WriteHoldingRegister(uint16_t address, uint16_t value);
 bool AnalogOutput_WriteHoldingRegisters(uint16_t start_address, const uint16_t *values, uint16_t count);

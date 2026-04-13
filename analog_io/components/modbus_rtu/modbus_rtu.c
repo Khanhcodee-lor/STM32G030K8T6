@@ -342,7 +342,7 @@ static bool ModbusRtu_ReadInputRegister(uint16_t address, uint16_t *value)
 
 static uint8_t ModbusRtu_WriteSingleHoldingRegister(uint16_t address, uint16_t value)
 {
-  if (address < APP_AO_HOLDING_REG_COUNT)
+  if (AnalogOutput_IsHoldingRegisterAddress(address))
   {
     return AnalogOutput_WriteHoldingRegister(address, value) ? 0U : MODBUS_EXCEPTION_ILLEGAL_VALUE;
   }
@@ -370,8 +370,7 @@ static uint8_t ModbusRtu_WriteMultipleHoldingRegisters(uint16_t start_address, u
   uint16_t values[APP_AO_HOLDING_REG_COUNT];
 
   if ((data == NULL) ||
-      (start_address >= APP_AO_HOLDING_REG_COUNT) ||
-      ((start_address + count) > APP_AO_HOLDING_REG_COUNT))
+      !AnalogOutput_IsHoldingRegisterRange(start_address, count))
   {
     return MODBUS_EXCEPTION_ILLEGAL_ADDRESS;
   }
@@ -392,14 +391,12 @@ static uint8_t ModbusRtu_WriteMultipleHoldingRegisters(uint16_t start_address, u
 
 static uint8_t ModbusRtu_ValidateHoldingRegisterWrite(uint16_t address, uint16_t value)
 {
-  if ((address >= APP_AO_HOLDING_REG_SETPOINT_BASE) &&
-      (address < (APP_AO_HOLDING_REG_SETPOINT_BASE + APP_AO_CHANNEL_COUNT)))
+  if ((uint16_t)(address - APP_AO_HOLDING_REG_SETPOINT_BASE) < APP_AO_CHANNEL_COUNT)
   {
     return (value <= APP_AO_SETPOINT_MAX) ? 0U : MODBUS_EXCEPTION_ILLEGAL_VALUE;
   }
 
-  if ((address >= APP_AO_HOLDING_REG_MODE_BASE) &&
-      (address < (APP_AO_HOLDING_REG_MODE_BASE + APP_AO_CHANNEL_COUNT)))
+  if ((uint16_t)(address - APP_AO_HOLDING_REG_MODE_BASE) < APP_AO_CHANNEL_COUNT)
   {
     return (value <= APP_AO_MODE_CURRENT) ? 0U : MODBUS_EXCEPTION_ILLEGAL_VALUE;
   }

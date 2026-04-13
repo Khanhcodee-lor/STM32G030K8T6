@@ -36,6 +36,19 @@
 #define APP_AO_APPLY_DELAY_MS             2U
 #define APP_AO_APPLY_RETRY_DELAY_MS       20U
 #define APP_AO_MCP4728_I2C_TIMEOUT_MS     3U
+/*
+ * MCP4728 per-mode defaults.
+ * The DAC itself does not natively know "0..10V" vs "4..20mA"; these mode
+ * values are mapped here to MCP4728 config bits so board-specific behavior can
+ * be tuned without touching the driver logic again.
+ */
+#define APP_AO_MCP4728_UDAC_BIT                 1U
+#define APP_AO_MCP4728_MODE_VOLTAGE_VREF_BIT    0U
+#define APP_AO_MCP4728_MODE_VOLTAGE_PD_BITS     0U
+#define APP_AO_MCP4728_MODE_VOLTAGE_GAIN_BIT    0U
+#define APP_AO_MCP4728_MODE_CURRENT_VREF_BIT    0U
+#define APP_AO_MCP4728_MODE_CURRENT_PD_BITS     0U
+#define APP_AO_MCP4728_MODE_CURRENT_GAIN_BIT    0U
 #define APP_DEVICE_REG_DEVICE_ID          0x0008U
 #define APP_DEVICE_REG_FW_VERSION         0x0009U
 #define APP_DEVICE_REG_STATUS             0x000AU
