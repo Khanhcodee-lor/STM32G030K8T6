@@ -1,6 +1,7 @@
 #ifndef APP_CONFIG_H
 #define APP_CONFIG_H
 
+#include "modbus_map.h"
 #include <stdint.h>
 
 #define APP_LED_HEARTBEAT_PERIOD_MS 500U
@@ -9,15 +10,8 @@
 #define APP_RS485_RX_BUFFER_SIZE    64U
 #define APP_I2C_SCAN_TIMEOUT_MS     2U
 #define APP_I2C_SCAN_READY_TRIALS   2U
-#define APP_AI_CHANNEL_COUNT        4U
 #define APP_AI_RAW_MAX              4095U
 #define APP_AI_SCALED_MAX_MV        10000U
-#define APP_AI_SPEC_INPUT_REG_RAW_BASE        0x0000U
-#define APP_AI_SPEC_INPUT_REG_SCALED_BASE     0x0004U
-#define APP_AI_SPEC_INPUT_REG_COUNT           (APP_AI_CHANNEL_COUNT * 2U)
-#define APP_AI_DEBUG_INPUT_REG_BOARD_RAW_BASE 0x0100U
-#define APP_AI_DEBUG_INPUT_REG_ADC_CODE_BASE  0x0104U
-#define APP_AI_DEBUG_INPUT_REG_COUNT          (APP_AI_CHANNEL_COUNT * 2U)
 #define APP_AI_ADS1115_CONVERSION_WAIT_MS 2U
 #define APP_AI_ADS1115_I2C_TIMEOUT_MS     3U
 #define APP_AI_ADS1115_RETRY_DELAY_MS     20U
@@ -26,13 +20,9 @@
 /* board raw = giá trị raw theo front-end thực tế của board tại 10V input. */
 #define APP_AI_CALIBRATED_RAW_AT_10V      1931U
 #define APP_AI_ADS1115_PGA_CONFIG         0x0200U
-#define APP_AO_CHANNEL_COUNT              4U
 #define APP_AO_SETPOINT_MAX               4095U
 #define APP_AO_MODE_VOLTAGE               0U
 #define APP_AO_MODE_CURRENT               1U
-#define APP_AO_HOLDING_REG_SETPOINT_BASE  0x0000U
-#define APP_AO_HOLDING_REG_MODE_BASE      0x0004U
-#define APP_AO_HOLDING_REG_COUNT          (APP_AO_CHANNEL_COUNT * 2U)
 #define APP_AO_APPLY_DELAY_MS             2U
 #define APP_AO_APPLY_RETRY_DELAY_MS       20U
 #define APP_AO_MCP4728_I2C_TIMEOUT_MS     3U
@@ -49,11 +39,22 @@
 #define APP_AO_MCP4728_MODE_CURRENT_VREF_BIT    0U
 #define APP_AO_MCP4728_MODE_CURRENT_PD_BITS     0U
 #define APP_AO_MCP4728_MODE_CURRENT_GAIN_BIT    0U
-#define APP_DEVICE_REG_DEVICE_ID          0x0008U
-#define APP_DEVICE_REG_FW_VERSION         0x0009U
-#define APP_DEVICE_REG_STATUS             0x000AU
-#define APP_DEVICE_REG_ERROR_CODE         0x000BU
-#define APP_DEVICE_HOLDING_REG_COUNT      12U
+/*
+ * The public AO contract is normalized at the module terminal:
+ *   - Voltage mode: AO_SETPOINT 0..4095 <=> 0..10V
+ *   - Current mode: AO_SETPOINT 0..4095 <=> 4..20mA
+ *
+ * Hardware path:
+ *   MCP4728 (0..5V) -> XTR111 current transmitter (RSET = 1.5k) -> output
+ *   switch -> optional 499R shunt to GND for 0..10V mode.
+ *
+ * Therefore firmware must convert the engineering setpoint above into the raw
+ * DAC code that produces the required VIN on XTR111.
+ */
+#define APP_AO_MODE_VOLTAGE_DAC_MIN_CODE        0U
+#define APP_AO_MODE_VOLTAGE_DAC_MAX_CODE        2462U
+#define APP_AO_MODE_CURRENT_DAC_MIN_CODE        491U
+#define APP_AO_MODE_CURRENT_DAC_MAX_CODE        2457U
 #define APP_FW_VERSION                    0x0103U
 #define APP_STATUS_MODULE_READY_BIT       (1U << 0)
 #define APP_STATUS_AI_OVERRANGE_BIT       (1U << 1)

@@ -17,8 +17,8 @@ static uint8_t s_mcp4728_address;
 static uint8_t s_dirty;
 static uint32_t s_apply_tick_ms;
 static uint32_t s_retry_tick_ms;
-static uint16_t s_setpoints[APP_AO_CHANNEL_COUNT];
-static uint16_t s_modes[APP_AO_CHANNEL_COUNT];
+static uint16_t s_setpoints[MODBUS_MAP_AO_CHANNEL_COUNT];
+static uint16_t s_modes[MODBUS_MAP_AO_CHANNEL_COUNT];
 static uint16_t s_status_register;
 static uint16_t s_error_code;
 
@@ -26,6 +26,7 @@ static bool AnalogOutput_IsSetpointRegisterAddress(uint16_t address);
 static bool AnalogOutput_IsModeRegisterAddress(uint16_t address);
 static bool AnalogOutput_FlushOutputs(void);
 static void AnalogOutput_MarkDirty(void);
+static uint16_t AnalogOutput_ConvertSetpointToDacCode(uint16_t setpoint, uint16_t mode);
 static uint8_t AnalogOutput_GetModeVrefBit(uint16_t mode);
 static uint8_t AnalogOutput_GetModePdBits(uint16_t mode);
 static uint8_t AnalogOutput_GetModeGainBit(uint16_t mode);
@@ -83,7 +84,7 @@ void AnalogOutput_Process(void)
     s_retry_tick_ms = HAL_GetTick();
   }
 }
-
+  
 bool AnalogOutput_ReadHoldingRegister(uint16_t address, uint16_t *value)
 {
   if ((value == NULL) || !AnalogOutput_IsHoldingRegisterAddress(address))
@@ -93,11 +94,11 @@ bool AnalogOutput_ReadHoldingRegister(uint16_t address, uint16_t *value)
 
   if (AnalogOutput_IsSetpointRegisterAddress(address))
   {
-    *value = s_setpoints[address - APP_AO_HOLDING_REG_SETPOINT_BASE];
+    *value = s_setpoints[address - MODBUS_MAP_HOLDING_REG_AO_SETPOINT_BASE];
     return true;
   }
 
-  *value = s_modes[address - APP_AO_HOLDING_REG_MODE_BASE];
+  *value = s_modes[address - MODBUS_MAP_HOLDING_REG_AO_MODE_BASE];
   return true;
 }
 
@@ -115,7 +116,7 @@ bool AnalogOutput_WriteHoldingRegister(uint16_t address, uint16_t value)
       return false;
     }
 
-    s_setpoints[address - APP_AO_HOLDING_REG_SETPOINT_BASE] = value;
+    s_setpoints[address - MODBUS_MAP_HOLDING_REG_AO_SETPOINT_BASE] = value;
     AnalogOutput_MarkDirty();
     return true;
   }
@@ -130,7 +131,7 @@ bool AnalogOutput_WriteHoldingRegister(uint16_t address, uint16_t value)
     return false;
   }
 
-  s_modes[address - APP_AO_HOLDING_REG_MODE_BASE] = value;
+  s_modes[address - MODBUS_MAP_HOLDING_REG_AO_MODE_BASE] = value;
   AnalogOutput_MarkDirty();
   return true;
 }
@@ -193,30 +194,32 @@ bool AnalogOutput_IsHoldingRegisterRange(uint16_t start_address, uint16_t count)
 
 static bool AnalogOutput_IsSetpointRegisterAddress(uint16_t address)
 {
-  return (uint16_t)(address - APP_AO_HOLDING_REG_SETPOINT_BASE) < APP_AO_CHANNEL_COUNT;
+  return (uint16_t)(address - MODBUS_MAP_HOLDING_REG_AO_SETPOINT_BASE) < MODBUS_MAP_AO_CHANNEL_COUNT;
 }
 
 static bool AnalogOutput_IsModeRegisterAddress(uint16_t address)
 {
-  return (uint16_t)(address - APP_AO_HOLDING_REG_MODE_BASE) < APP_AO_CHANNEL_COUNT;
+  return (uint16_t)(address - MODBUS_MAP_HOLDING_REG_AO_MODE_BASE) < MODBUS_MAP_AO_CHANNEL_COUNT;
 }
 
 static bool AnalogOutput_FlushOutputs(void)
 {
-  uint8_t frame[APP_AO_CHANNEL_COUNT * MCP4728_MULTI_WRITE_STRIDE];
+  uint8_t frame[MODBUS_MAP_AO_CHANNEL_COUNT * MCP4728_MULTI_WRITE_STRIDE];
   uint8_t channel = 0U;
   uint8_t general_call_command = MCP4728_GENERAL_CALL_UPDATE;
   uint8_t *channel_frame = NULL;
   uint8_t vref_bit = 0U;
   uint8_t pd_bits = 0U;
   uint8_t gain_bit = 0U;
+  uint16_t dac_code = 0U;
 
-  for (channel = 0U; channel < APP_AO_CHANNEL_COUNT; ++channel)
+  for (channel = 0U; channel < MODBUS_MAP_AO_CHANNEL_COUNT; ++channel)
   {
     channel_frame = &frame[channel * MCP4728_MULTI_WRITE_STRIDE];
     vref_bit = AnalogOutput_GetModeVrefBit(s_modes[channel]);
     pd_bits = AnalogOutput_GetModePdBits(s_modes[channel]);
     gain_bit = AnalogOutput_GetModeGainBit(s_modes[channel]);
+    dac_code = AnalogOutput_ConvertSetpointToDacCode(s_setpoints[channel], s_modes[channel]);
 
     channel_frame[0] = (uint8_t)(MCP4728_MULTI_WRITE_COMMAND |
                                  ((channel & 0x03U) << 1U) |
@@ -224,8 +227,8 @@ static bool AnalogOutput_FlushOutputs(void)
     channel_frame[1] = (uint8_t)(((vref_bit & 0x01U) << 7U) |
                                  ((pd_bits & 0x03U) << 5U) |
                                  ((gain_bit & 0x01U) << 4U) |
-                                 ((s_setpoints[channel] >> 8U) & 0x0FU));
-    channel_frame[2] = (uint8_t)(s_setpoints[channel] & 0x00FFU);
+                                 ((dac_code >> 8U) & 0x0FU));
+    channel_frame[2] = (uint8_t)(dac_code & 0x00FFU);
   }
 
   if (HAL_I2C_Master_Transmit(
@@ -250,6 +253,30 @@ static void AnalogOutput_MarkDirty(void)
 {
   s_dirty = 1U;
   s_apply_tick_ms = HAL_GetTick();
+}
+
+static uint16_t AnalogOutput_ConvertSetpointToDacCode(uint16_t setpoint, uint16_t mode)
+{
+  uint32_t dac_code = 0U;
+  uint16_t dac_min_code = APP_AO_MODE_VOLTAGE_DAC_MIN_CODE;
+  uint16_t dac_max_code = APP_AO_MODE_VOLTAGE_DAC_MAX_CODE;
+
+  if (mode == APP_AO_MODE_CURRENT)
+  {
+    dac_min_code = APP_AO_MODE_CURRENT_DAC_MIN_CODE;
+    dac_max_code = APP_AO_MODE_CURRENT_DAC_MAX_CODE;
+  }
+
+  dac_code = (uint32_t)dac_max_code - dac_min_code;
+  dac_code = ((uint32_t)setpoint * dac_code + (APP_AO_SETPOINT_MAX / 2U)) / APP_AO_SETPOINT_MAX;
+  dac_code += dac_min_code;
+
+  if (dac_code > APP_AO_SETPOINT_MAX)
+  {
+    dac_code = APP_AO_SETPOINT_MAX;
+  }
+
+  return (uint16_t)dac_code;
 }
 
 static uint8_t AnalogOutput_GetModeVrefBit(uint16_t mode)

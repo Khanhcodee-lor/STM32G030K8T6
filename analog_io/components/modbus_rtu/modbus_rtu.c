@@ -19,7 +19,7 @@
 #define MODBUS_EXCEPTION_ILLEGAL_VALUE     0x03U
 #define MODBUS_EXCEPTION_DEVICE_FAILURE    0x04U
 #define MODBUS_RTU_MAX_READ_REGISTERS      ((MODBUS_RTU_MAX_FRAME_SIZE - 5U) / 2U)
-#define MODBUS_RTU_MAX_WRITE_REGISTERS     APP_AO_HOLDING_REG_COUNT
+#define MODBUS_RTU_MAX_WRITE_REGISTERS     MODBUS_MAP_HOLDING_REG_AO_COUNT
 
 static uint8_t s_rx_buffer[MODBUS_RTU_MAX_FRAME_SIZE];
 static uint8_t s_rx_length;
@@ -314,19 +314,19 @@ static bool ModbusRtu_ReadHoldingRegister(uint16_t address, uint16_t *value)
 
   switch (address)
   {
-    case APP_DEVICE_REG_DEVICE_ID:
+    case MODBUS_MAP_HOLDING_REG_DEVICE_ID:
       *value = bsp_get_modbus_address();
       return true;
 
-    case APP_DEVICE_REG_FW_VERSION:
+    case MODBUS_MAP_HOLDING_REG_FW_VERSION:
       *value = APP_FW_VERSION;
       return true;
 
-    case APP_DEVICE_REG_STATUS:
+    case MODBUS_MAP_HOLDING_REG_STATUS:
       *value = ModbusRtu_GetStatusRegister();
       return true;
 
-    case APP_DEVICE_REG_ERROR_CODE:
+    case MODBUS_MAP_HOLDING_REG_ERROR_CODE:
       *value = ModbusRtu_GetErrorCode();
       return true;
 
@@ -347,7 +347,7 @@ static uint8_t ModbusRtu_WriteSingleHoldingRegister(uint16_t address, uint16_t v
     return AnalogOutput_WriteHoldingRegister(address, value) ? 0U : MODBUS_EXCEPTION_ILLEGAL_VALUE;
   }
 
-  if (address == APP_DEVICE_REG_DEVICE_ID)
+  if (address == MODBUS_MAP_HOLDING_REG_DEVICE_ID)
   {
     if ((value < APP_MODBUS_ADDRESS_MIN) || (value > APP_MODBUS_ADDRESS_MAX))
     {
@@ -367,7 +367,7 @@ static uint8_t ModbusRtu_WriteMultipleHoldingRegisters(uint16_t start_address, u
 {
   uint16_t index = 0U;
   uint16_t value = 0U;
-  uint16_t values[APP_AO_HOLDING_REG_COUNT];
+  uint16_t values[MODBUS_MAP_HOLDING_REG_AO_COUNT];
 
   if ((data == NULL) ||
       !AnalogOutput_IsHoldingRegisterRange(start_address, count))
@@ -391,12 +391,12 @@ static uint8_t ModbusRtu_WriteMultipleHoldingRegisters(uint16_t start_address, u
 
 static uint8_t ModbusRtu_ValidateHoldingRegisterWrite(uint16_t address, uint16_t value)
 {
-  if ((uint16_t)(address - APP_AO_HOLDING_REG_SETPOINT_BASE) < APP_AO_CHANNEL_COUNT)
+  if ((uint16_t)(address - MODBUS_MAP_HOLDING_REG_AO_SETPOINT_BASE) < MODBUS_MAP_AO_CHANNEL_COUNT)
   {
     return (value <= APP_AO_SETPOINT_MAX) ? 0U : MODBUS_EXCEPTION_ILLEGAL_VALUE;
   }
 
-  if ((uint16_t)(address - APP_AO_HOLDING_REG_MODE_BASE) < APP_AO_CHANNEL_COUNT)
+  if ((uint16_t)(address - MODBUS_MAP_HOLDING_REG_AO_MODE_BASE) < MODBUS_MAP_AO_CHANNEL_COUNT)
   {
     return (value <= APP_AO_MODE_CURRENT) ? 0U : MODBUS_EXCEPTION_ILLEGAL_VALUE;
   }

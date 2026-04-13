@@ -26,10 +26,10 @@ static uint8_t s_ads1115_address;
 static uint8_t s_current_channel;
 static uint8_t s_sampled_channel_mask;
 static uint32_t s_state_tick_ms;
-static uint16_t s_adc_code_values[APP_AI_CHANNEL_COUNT];
-static uint16_t s_board_raw_values[APP_AI_CHANNEL_COUNT];
-static uint16_t s_raw_values[APP_AI_CHANNEL_COUNT];
-static uint16_t s_scaled_mv_values[APP_AI_CHANNEL_COUNT];
+static uint16_t s_adc_code_values[MODBUS_MAP_AI_CHANNEL_COUNT];
+static uint16_t s_board_raw_values[MODBUS_MAP_AI_CHANNEL_COUNT];
+static uint16_t s_raw_values[MODBUS_MAP_AI_CHANNEL_COUNT];
+static uint16_t s_scaled_mv_values[MODBUS_MAP_AI_CHANNEL_COUNT];
 static uint16_t s_status_register;
 static uint16_t s_error_code;
 static AnalogInputState s_state;
@@ -110,7 +110,7 @@ void AnalogInput_Process(void)
   if (AnalogInput_FinishConversion(s_current_channel))
   {
     s_sampled_channel_mask |= (uint8_t)(1U << s_current_channel);
-    s_current_channel = (uint8_t)((s_current_channel + 1U) % APP_AI_CHANNEL_COUNT);
+    s_current_channel = (uint8_t)((s_current_channel + 1U) % MODBUS_MAP_AI_CHANNEL_COUNT);
     s_error_code = APP_ERROR_CODE_NONE;
     AnalogInput_RecomputeStatus();
   }
@@ -151,17 +151,15 @@ static bool AnalogInput_ReadSpecInputRegister(uint16_t address, uint16_t *value)
     return false;
   }
 
-  if ((address >= APP_AI_SPEC_INPUT_REG_RAW_BASE) &&
-      (address < (APP_AI_SPEC_INPUT_REG_RAW_BASE + APP_AI_CHANNEL_COUNT)))
+  if ((uint16_t)(address - MODBUS_MAP_INPUT_REG_AI_RAW_BASE) < MODBUS_MAP_AI_CHANNEL_COUNT)
   {
-    *value = s_raw_values[address - APP_AI_SPEC_INPUT_REG_RAW_BASE];
+    *value = s_raw_values[address - MODBUS_MAP_INPUT_REG_AI_RAW_BASE];
     return true;
   }
 
-  if ((address >= APP_AI_SPEC_INPUT_REG_SCALED_BASE) &&
-      (address < (APP_AI_SPEC_INPUT_REG_SCALED_BASE + APP_AI_CHANNEL_COUNT)))
+  if ((uint16_t)(address - MODBUS_MAP_INPUT_REG_AI_SCALED_BASE) < MODBUS_MAP_AI_CHANNEL_COUNT)
   {
-    *value = s_scaled_mv_values[address - APP_AI_SPEC_INPUT_REG_SCALED_BASE];
+    *value = s_scaled_mv_values[address - MODBUS_MAP_INPUT_REG_AI_SCALED_BASE];
     return true;
   }
 
@@ -175,17 +173,15 @@ static bool AnalogInput_ReadDebugInputRegister(uint16_t address, uint16_t *value
     return false;
   }
 
-  if ((address >= APP_AI_DEBUG_INPUT_REG_BOARD_RAW_BASE) &&
-      (address < (APP_AI_DEBUG_INPUT_REG_BOARD_RAW_BASE + APP_AI_CHANNEL_COUNT)))
+  if ((uint16_t)(address - MODBUS_MAP_INPUT_REG_AI_BOARD_RAW_BASE) < MODBUS_MAP_AI_CHANNEL_COUNT)
   {
-    *value = s_board_raw_values[address - APP_AI_DEBUG_INPUT_REG_BOARD_RAW_BASE];
+    *value = s_board_raw_values[address - MODBUS_MAP_INPUT_REG_AI_BOARD_RAW_BASE];
     return true;
   }
 
-  if ((address >= APP_AI_DEBUG_INPUT_REG_ADC_CODE_BASE) &&
-      (address < (APP_AI_DEBUG_INPUT_REG_ADC_CODE_BASE + APP_AI_CHANNEL_COUNT)))
+  if ((uint16_t)(address - MODBUS_MAP_INPUT_REG_AI_ADC_CODE_BASE) < MODBUS_MAP_AI_CHANNEL_COUNT)
   {
-    *value = s_adc_code_values[address - APP_AI_DEBUG_INPUT_REG_ADC_CODE_BASE];
+    *value = s_adc_code_values[address - MODBUS_MAP_INPUT_REG_AI_ADC_CODE_BASE];
     return true;
   }
 
@@ -355,12 +351,12 @@ static void AnalogInput_RecomputeStatus(void)
   uint8_t index = 0U;
   uint16_t status = 0U;
 
-  if (s_sampled_channel_mask == ((1U << APP_AI_CHANNEL_COUNT) - 1U))
+  if (s_sampled_channel_mask == ((1U << MODBUS_MAP_AI_CHANNEL_COUNT) - 1U))
   {
     status |= APP_STATUS_MODULE_READY_BIT;
   }
 
-  for (index = 0U; index < APP_AI_CHANNEL_COUNT; ++index)
+  for (index = 0U; index < MODBUS_MAP_AI_CHANNEL_COUNT; ++index)
   {
     if (s_raw_values[index] >= APP_AI_RAW_MAX)
     {
