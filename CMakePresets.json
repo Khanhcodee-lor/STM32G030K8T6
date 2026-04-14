@@ -6,8 +6,12 @@
             "hidden": true,
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/${presetName}",
-		    "toolchainFile": "${sourceDir}/cmake/gcc-arm-none-eabi.cmake",
+            "toolchainFile": "${sourceDir}/analog_io/toolchain.cmake",
+            "environment": {
+                "STM32CUBECLT_PATH": "C:/ST/STM32CubeCLT_1.21.0"
+            },
             "cacheVariables": {
+                "CMAKE_MAKE_PROGRAM": "C:/ST/STM32CubeCLT_1.21.0/ninja/bin/ninja.exe"
             }
         },
         {
