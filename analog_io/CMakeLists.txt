@@ -26,6 +26,7 @@ add_executable(${PROJECT_NAME}.elf
     components/analog_core/analog_output.c
     components/modbus_rtu/modbus_rtu.c
     config/app_config.c
+    config/calibration.c
     config/device_config.c
     platform/pal/debug_log.c
     platform/pal/pal.c

@@ -1,6 +1,7 @@
 #include "analog_input.h"
 
 #include "app_config.h"
+#include "calibration.h"
 #include "main.h"
 #include <string.h>
 
@@ -9,7 +10,6 @@
 #define ADS1115_REGISTER_CONVERSION     0x00U
 #define ADS1115_REGISTER_CONFIG         0x01U
 #define ADS1115_CONFIG_OS_START         0x8000U
-#define ADS1115_CONFIG_MUX_AIN0_GND     0x4000U
 #define ADS1115_CONFIG_MODE_SINGLE_SHOT 0x0100U
 #define ADS1115_CONFIG_DR_860SPS        0x00E0U
 #define ADS1115_CONFIG_COMP_DISABLE     0x0003U
@@ -41,10 +41,9 @@ static bool AnalogInput_StartConversion(uint8_t channel);
 static bool AnalogInput_FinishConversion(uint8_t channel);
 static bool AnalogInput_ReadSpecInputRegister(uint16_t address, uint16_t *value);
 static bool AnalogInput_ReadDebugInputRegister(uint16_t address, uint16_t *value);
-/* board raw = normalized raw in the board analog domain, before mapping to the public spec. */
 static uint16_t AnalogInput_ConvertCodeToBoardRaw(uint16_t positive_code);
-static uint16_t AnalogInput_ConvertBoardRawToSpecRaw(uint16_t board_raw_value);
-static uint16_t AnalogInput_ConvertBoardRawToScaledMv(uint16_t board_raw_value);
+static uint16_t AnalogInput_ConvertBoardRawToSpecRaw(uint8_t channel, uint16_t board_raw_value);
+static uint16_t AnalogInput_ConvertBoardRawToScaledMv(uint8_t channel, uint16_t board_raw_value);
 static void AnalogInput_RecomputeStatus(void);
 static uint8_t AnalogInput_GetMuxConfig(uint8_t channel);
 
@@ -274,8 +273,8 @@ static bool AnalogInput_FinishConversion(uint8_t channel)
   s_adc_code_values[channel] = positive_code;
   board_raw_value = AnalogInput_ConvertCodeToBoardRaw(positive_code);
   s_board_raw_values[channel] = board_raw_value;
-  s_raw_values[channel] = AnalogInput_ConvertBoardRawToSpecRaw(board_raw_value);
-  s_scaled_mv_values[channel] = AnalogInput_ConvertBoardRawToScaledMv(board_raw_value);
+  s_raw_values[channel] = AnalogInput_ConvertBoardRawToSpecRaw(channel, board_raw_value);
+  s_scaled_mv_values[channel] = AnalogInput_ConvertBoardRawToScaledMv(channel, board_raw_value);
   return true;
 }
 
@@ -299,18 +298,27 @@ static uint16_t AnalogInput_ConvertCodeToBoardRaw(uint16_t positive_code)
   return (uint16_t)board_raw_value;
 }
 
-static uint16_t AnalogInput_ConvertBoardRawToSpecRaw(uint16_t board_raw_value)
+static uint16_t AnalogInput_ConvertBoardRawToSpecRaw(uint8_t channel, uint16_t board_raw_value)
 {
-  uint32_t spec_raw_value = board_raw_value;
+  const CalibrationData *calibration = Calibration_Get();
+  uint32_t zero_raw = calibration->ai_board_raw_zero[channel];
+  uint32_t full_scale_raw = calibration->ai_board_raw_full_scale[channel];
+  uint32_t span = 0U;
+  uint32_t spec_raw_value = 0U;
 
-  /* Ép board raw về dải raw tài liệu yêu cầu: 0..4095 tại 0..10V. */
-  if (spec_raw_value >= APP_AI_CALIBRATED_RAW_AT_10V)
+  if (board_raw_value <= zero_raw)
+  {
+    return 0U;
+  }
+
+  if (board_raw_value >= full_scale_raw)
   {
     return APP_AI_RAW_MAX;
   }
 
-  spec_raw_value = (spec_raw_value * APP_AI_RAW_MAX + (APP_AI_CALIBRATED_RAW_AT_10V / 2U)) /
-                   APP_AI_CALIBRATED_RAW_AT_10V;
+  span = full_scale_raw - zero_raw;
+  spec_raw_value = (uint32_t)(board_raw_value - zero_raw);
+  spec_raw_value = (spec_raw_value * APP_AI_RAW_MAX + (span / 2U)) / span;
 
   if (spec_raw_value > APP_AI_RAW_MAX)
   {
@@ -320,31 +328,35 @@ static uint16_t AnalogInput_ConvertBoardRawToSpecRaw(uint16_t board_raw_value)
   return (uint16_t)spec_raw_value;
 }
 
-  static uint16_t AnalogInput_ConvertBoardRawToScaledMv(uint16_t board_raw_value)
+static uint16_t AnalogInput_ConvertBoardRawToScaledMv(uint8_t channel, uint16_t board_raw_value)
+{
+  const CalibrationData *calibration = Calibration_Get();
+  uint32_t zero_raw = calibration->ai_board_raw_zero[channel];
+  uint32_t full_scale_raw = calibration->ai_board_raw_full_scale[channel];
+  uint32_t span = 0U;
+  uint32_t scaled_mv = 0U;
+
+  if (board_raw_value <= zero_raw)
   {
-    uint32_t scaled_mv = board_raw_value;
-
-    /*
-    * Follow the original application note example:
-    * AIx_SCALED = 5000 means Vin = 5.000V, so the register is stored in mV.
-    * Giá trị đầu vào của hàm này vẫn là board raw, chưa phải spec raw.
-    AI_RAW là giá trị raw chuẩn hóa theo spec 12-bit của module, không phải mã ADC gốc từ ADS1115.
-    */
-    if (scaled_mv >= APP_AI_CALIBRATED_RAW_AT_10V)
-    {
-      return APP_AI_SCALED_MAX_MV;
-    }
-
-    scaled_mv = (scaled_mv * APP_AI_SCALED_MAX_MV + (APP_AI_CALIBRATED_RAW_AT_10V / 2U)) /
-                APP_AI_CALIBRATED_RAW_AT_10V;
-
-    if (scaled_mv > APP_AI_SCALED_MAX_MV)
-    {
-      scaled_mv = APP_AI_SCALED_MAX_MV;
-    }
-
-    return (uint16_t)scaled_mv;
+    return 0U;
   }
+
+  if (board_raw_value >= full_scale_raw)
+  {
+    return APP_AI_SCALED_MAX_MV;
+  }
+
+  span = full_scale_raw - zero_raw;
+  scaled_mv = (uint32_t)(board_raw_value - zero_raw);
+  scaled_mv = (scaled_mv * APP_AI_SCALED_MAX_MV + (span / 2U)) / span;
+
+  if (scaled_mv > APP_AI_SCALED_MAX_MV)
+  {
+    scaled_mv = APP_AI_SCALED_MAX_MV;
+  }
+
+  return (uint16_t)scaled_mv;
+}
 
 static void AnalogInput_RecomputeStatus(void)
 {

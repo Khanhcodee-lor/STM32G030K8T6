@@ -1,4 +1,5 @@
 #include "bsp.h"
+#include "calibration.h"
 #include "config.h"
 #include "main.h"
 #include "modbus_service.h"
@@ -16,6 +17,7 @@ int main(void)
 
   pal_logf("reset t=0ms cause=%s\r\n", bsp_get_reset_cause_name());
   pal_logf("modbus addr: %u\r\n", (unsigned int)bsp_get_modbus_address());
+  pal_logf("calibration: %s\r\n", Calibration_IsFactoryDataLoaded() ? "flash" : "defaults");
   (void)analog_io_service_apply_safe_output_blocking();
 
   modbus_service_init();

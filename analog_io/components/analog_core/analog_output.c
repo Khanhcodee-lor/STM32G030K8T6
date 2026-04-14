@@ -1,6 +1,7 @@
 #include "analog_output.h"
 
 #include "app_config.h"
+#include "calibration.h"
 #include "main.h"
 #include <string.h>
 
@@ -32,7 +33,7 @@ static void AnalogOutput_MarkDirty(void);
 static void AnalogOutput_LoadSafeDefaults(void);
 static bool AnalogOutput_IsValidDeviceAddress(uint8_t mcp4728_address);
 static bool AnalogOutput_ProbeDeviceAddress(uint8_t *mcp4728_address);
-static uint16_t AnalogOutput_ConvertSetpointToDacCode(uint16_t setpoint, uint16_t mode);
+static uint16_t AnalogOutput_ConvertSetpointToDacCode(uint8_t channel, uint16_t setpoint, uint16_t mode);
 static uint8_t AnalogOutput_GetModeVrefBit(uint16_t mode);
 static uint8_t AnalogOutput_GetModePdBits(uint16_t mode);
 static uint8_t AnalogOutput_GetModeGainBit(uint16_t mode);
@@ -287,7 +288,7 @@ static bool AnalogOutput_FlushOutputsToAddress(uint8_t mcp4728_address, uint8_t 
     vref_bit = AnalogOutput_GetModeVrefBit(s_modes[channel]);
     pd_bits = (pd_override_enable != 0U) ? (pd_override_bits & 0x03U) : AnalogOutput_GetModePdBits(s_modes[channel]);
     gain_bit = AnalogOutput_GetModeGainBit(s_modes[channel]);
-    dac_code = AnalogOutput_ConvertSetpointToDacCode(s_setpoints[channel], s_modes[channel]);
+    dac_code = AnalogOutput_ConvertSetpointToDacCode(channel, s_setpoints[channel], s_modes[channel]);
 
     channel_frame[0] = (uint8_t)(MCP4728_MULTI_WRITE_COMMAND |
                                  ((channel & 0x03U) << 1U) |
@@ -365,16 +366,22 @@ static bool AnalogOutput_ProbeDeviceAddress(uint8_t *mcp4728_address)
   return false;
 }
 
-static uint16_t AnalogOutput_ConvertSetpointToDacCode(uint16_t setpoint, uint16_t mode)
+static uint16_t AnalogOutput_ConvertSetpointToDacCode(uint8_t channel, uint16_t setpoint, uint16_t mode)
 {
+  const CalibrationData *calibration = Calibration_Get();
   uint32_t dac_code = 0U;
-  uint16_t dac_min_code = APP_AO_MODE_VOLTAGE_DAC_MIN_CODE;
-  uint16_t dac_max_code = APP_AO_MODE_VOLTAGE_DAC_MAX_CODE;
+  uint16_t dac_min_code = calibration->ao_voltage_min_code[channel];
+  uint16_t dac_max_code = calibration->ao_voltage_max_code[channel];
 
   if (mode == APP_AO_MODE_CURRENT)
   {
-    dac_min_code = APP_AO_MODE_CURRENT_DAC_MIN_CODE;
-    dac_max_code = APP_AO_MODE_CURRENT_DAC_MAX_CODE;
+    dac_min_code = calibration->ao_current_min_code[channel];
+    dac_max_code = calibration->ao_current_max_code[channel];
+  }
+
+  if (dac_max_code < dac_min_code)
+  {
+    return dac_min_code;
   }
 
   dac_code = (uint32_t)dac_max_code - dac_min_code;

@@ -1,6 +1,7 @@
 #include "bsp.h"
 
 #include "app_config.h"
+#include "calibration.h"
 #include "device_config.h"
 #include "main.h"
 #include "pal.h"
@@ -33,6 +34,7 @@ void bsp_init(void)
   MX_GPIO_Init();
   MX_I2C2_Init();
   pal_debug_init();
+  Calibration_Init();
   DeviceConfig_Init();
   HAL_GPIO_WritePin(LED_TEST_GPIO_Port, LED_TEST_Pin, GPIO_PIN_RESET);
   s_led_tick_ms = HAL_GetTick();
