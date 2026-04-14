@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(analog_io C ASM)
 
+option(ANALOG_IO_ENABLE_TEST_HOOKS "Build analog_io test hooks" OFF)
+
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug)
 endif()
@@ -54,6 +56,12 @@ add_executable(${PROJECT_NAME}.elf
     ${PROJECT_ROOT}/Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_ll_rcc.c
 )
 
+if(ANALOG_IO_ENABLE_TEST_HOOKS)
+    target_sources(${PROJECT_NAME}.elf PRIVATE
+        test/calibration_test_hook.c
+    )
+endif()
+
 target_include_directories(${PROJECT_NAME}.elf PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/app
@@ -66,6 +74,7 @@ target_include_directories(${PROJECT_NAME}.elf PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/services/analog_io_service
     ${CMAKE_CURRENT_SOURCE_DIR}/services/i2c_bus_scan
     ${CMAKE_CURRENT_SOURCE_DIR}/services/modbus_service
+    ${CMAKE_CURRENT_SOURCE_DIR}/test
     ${CMAKE_CURRENT_SOURCE_DIR}/components/analog_core
     ${CMAKE_CURRENT_SOURCE_DIR}/components/modbus_rtu
     ${CMAKE_CURRENT_SOURCE_DIR}/platform/pal
@@ -80,6 +89,7 @@ target_include_directories(${PROJECT_NAME}.elf PRIVATE
 target_compile_definitions(${PROJECT_NAME}.elf PRIVATE
     USE_HAL_DRIVER
     STM32G030xx
+    APP_CALIBRATION_TEST_HOOK_ENABLE=$<IF:$<BOOL:${ANALOG_IO_ENABLE_TEST_HOOKS}>,1,0>
     $<$<CONFIG:Debug>:DEBUG>
 )
 

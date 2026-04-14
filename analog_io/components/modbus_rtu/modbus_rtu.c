@@ -38,9 +38,7 @@ static bool ModbusRtu_ReadInputRegister(uint16_t address, uint16_t *value);
 static uint8_t ModbusRtu_WriteSingleHoldingRegister(uint16_t address, uint16_t value);
 static uint8_t ModbusRtu_WriteMultipleHoldingRegisters(uint16_t start_address, uint16_t count, const uint8_t *data);
 static uint8_t ModbusRtu_ValidateHoldingRegisterWrite(uint16_t address, uint16_t value);
-static uint16_t ModbusRtu_GetStatusRegister(void);
 static uint16_t ModbusRtu_GetCurrentErrorCode(void);
-static uint16_t ModbusRtu_GetErrorCode(void);
 static void ModbusRtu_UpdateLatchedErrorCode(void);
 static uint16_t ModbusRtu_Crc16(const uint8_t *data, uint8_t length);
 static uint16_t ModbusRtu_ReadU16(const uint8_t *data);
@@ -410,7 +408,7 @@ static uint8_t ModbusRtu_ValidateHoldingRegisterWrite(uint16_t address, uint16_t
   return MODBUS_EXCEPTION_ILLEGAL_ADDRESS;
 }
 
-static uint16_t ModbusRtu_GetStatusRegister(void)
+uint16_t ModbusRtu_GetStatusRegister(void)
 {
   uint16_t status = (uint16_t)(AnalogInput_GetStatus() | AnalogOutput_GetStatus());
 
@@ -434,7 +432,7 @@ static uint16_t ModbusRtu_GetCurrentErrorCode(void)
   return AnalogInput_GetErrorCode();
 }
 
-static uint16_t ModbusRtu_GetErrorCode(void)
+uint16_t ModbusRtu_GetErrorCode(void)
 {
   ModbusRtu_UpdateLatchedErrorCode();
   return s_last_error_code;
