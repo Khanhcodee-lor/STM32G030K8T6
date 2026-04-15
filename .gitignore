@@ -1,9 +1,15 @@
-build
-mx.scratch
-!.settings
+# Build directories (root and nested)
+/build/
+**/build/
 
+# STM32CubeMX scratch
+mx.scratch
+!.settings/
+
+# Local editor folder
 .vscode/
 
+# Firmware and object outputs
 *.elf
 *.map
 *.bin
@@ -13,9 +19,17 @@ mx.scratch
 *.su
 *.d
 
+# CMake/Ninja generated files
 CMakeCache.txt
+**/CMakeCache.txt
 compile_commands.json
+**/compile_commands.json
 cmake_install.cmake
+**/cmake_install.cmake
 build.ninja
+**/build.ninja
 .ninja_*
+**/.ninja_*
+CMakeFiles/
+**/CMakeFiles/
 
